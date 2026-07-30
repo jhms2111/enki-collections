@@ -76,6 +76,7 @@ model Conversation {
   channel                ConversationChannel @default(WEBCHAT)
   state                  ConversationState   @default(STARTED)
   debtorRef              String?             @db.VarChar(160)
+  verifiedDebtorContext  Json?
   identityStatus         IdentityStatus      @default(NOT_STARTED)
   failedIdentityAttempts Int                 @default(0)
   identityLockedAt       DateTime?

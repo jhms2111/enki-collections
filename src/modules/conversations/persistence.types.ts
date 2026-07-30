@@ -31,6 +31,7 @@ export type PersistedConversation = Readonly<{
     | "IDENTITY_BLOCKED"
     | "CLOSED";
   debtorRef: string | null;
+  verifiedDebtorContext: unknown | null;
   identityStatus: "NOT_STARTED" | "PENDING" | "VERIFIED" | "BLOCKED";
   failedIdentityAttempts: number;
   identityLockedAt: Date | null;

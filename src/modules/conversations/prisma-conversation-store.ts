@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
 import type { ConversationStore } from "./conversation-store";
+import type { VerifiedDebtorContext } from "@/modules/debt-provider/debt-provider.types";
 import { parseAuditMetadata } from "./audit-metadata";
 import type {
   AuditInput,
@@ -160,6 +161,7 @@ export class PrismaConversationStore implements ConversationStore {
     conversation: PersistedConversation;
     verified: boolean;
     verifiedDebtorRef?: string;
+    verifiedDebtorContext?: VerifiedDebtorContext;
     maxAttempts: number;
     now: Date;
     audit: AuditInput;
@@ -195,6 +197,8 @@ export class PrismaConversationStore implements ConversationStore {
           },
           data: {
               debtorRef: input.verifiedDebtorRef,
+              verifiedDebtorContext:
+                input.verifiedDebtorContext as Prisma.InputJsonValue,
               identityStatus: "VERIFIED",
               state: "IDENTITY_VERIFIED",
               lastActivityAt: input.now,
@@ -254,6 +258,17 @@ export class PrismaConversationStore implements ConversationStore {
     );
   }
 
+  async recordAudit(input: {
+    conversation: PersistedConversation;
+    audit: AuditInput;
+  }): Promise<void> {
+    await this.createAudit(this.client, {
+      organizationId: input.conversation.organizationId,
+      conversationId: input.conversation.id,
+      audit: input.audit,
+    });
+  }
+
   private async requireConversation(
     id: string,
     organizationId: string,
@@ -305,6 +320,7 @@ export class PrismaConversationStore implements ConversationStore {
       publicReference: conversation.publicReference,
       state: conversation.state,
       debtorRef: conversation.debtorRef,
+      verifiedDebtorContext: conversation.verifiedDebtorContext,
       identityStatus: conversation.identityStatus,
       failedIdentityAttempts: conversation.failedIdentityAttempts,
       identityLockedAt: conversation.identityLockedAt,

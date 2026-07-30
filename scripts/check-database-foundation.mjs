@@ -42,11 +42,20 @@ try {
        AND lower(tablename) = ANY($1::text[])`,
     [["debtor", "debt", "authorizedoffer", "payment", "paymentinstrument"]],
   );
+  const providerContextColumn = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'Conversation'
+       AND column_name = 'verifiedDebtorContext'
+       AND data_type = 'jsonb'`,
+  );
 
   const healthy =
     organization.rows[0]?.count === 1 &&
     allowedTables.rowCount === 5 &&
-    forbiddenTables.rowCount === 0;
+    forbiddenTables.rowCount === 0 &&
+    providerContextColumn.rows[0]?.count === 1;
 
   if (!healthy) {
     throw new Error("A fundação persistida não corresponde ao escopo aprovado.");
@@ -57,6 +66,8 @@ try {
       demoOrganizations: organization.rows[0].count,
       allowedTables: allowedTables.rowCount,
       forbiddenFinancialTables: forbiddenTables.rowCount,
+      verifiedProviderContextColumns:
+        providerContextColumn.rows[0].count,
     }) + "\n",
   );
 } catch (error) {

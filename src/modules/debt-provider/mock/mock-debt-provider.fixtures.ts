@@ -131,6 +131,23 @@ export const mockOrganizations: readonly MockOrganizationFixture[] = [
                     expiresAt: "2025-01-10T23:59:59.000Z",
                     status: "EXPIRED",
                   },
+                  {
+                    offerRef: "offer-disabled-001",
+                    debtRef: "debt-001",
+                    debtorRef: "debtor-001",
+                    creditorRef: "creditor-horizonte",
+                    providerVersion: "offer-disabled-v1",
+                    terms: {
+                      kind: "CASH",
+                      total: brl(25_000),
+                      downPayment: brl(25_000),
+                      installmentCount: 1,
+                      installmentAmount: brl(25_000),
+                      firstDueDate: "2099-08-15",
+                    },
+                    expiresAt: "2099-08-15T23:59:59.000Z",
+                    status: "DISABLED",
+                  },
                 ],
               },
             ],
@@ -243,4 +260,3 @@ export const mockOrganizations: readonly MockOrganizationFixture[] = [
     ],
   },
 ];
-

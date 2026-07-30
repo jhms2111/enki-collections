@@ -67,6 +67,7 @@ class MemoryConversationStore implements ConversationStore {
       sessionTokenHash: input.sessionTokenHash,
       state: "STARTED" as const,
       debtorRef: null,
+      verifiedDebtorContext: null,
       identityStatus: "NOT_STARTED" as const,
       failedIdentityAttempts: 0,
       identityLockedAt: null,
@@ -125,6 +126,7 @@ class MemoryConversationStore implements ConversationStore {
     conversation: PersistedConversation;
     verified: boolean;
     verifiedDebtorRef?: string;
+    verifiedDebtorContext?: import("@/modules/debt-provider/debt-provider.types").VerifiedDebtorContext;
     maxAttempts: number;
     now: Date;
     audit: AuditInput;
@@ -147,6 +149,9 @@ class MemoryConversationStore implements ConversationStore {
           ? ("BLOCKED" as const)
           : ("PENDING" as const),
       debtorRef: input.verified ? input.verifiedDebtorRef! : current.debtorRef,
+      verifiedDebtorContext: input.verified
+        ? input.verifiedDebtorContext!
+        : current.verifiedDebtorContext,
       failedIdentityAttempts: failedAttempts,
       identityLockedAt: blocked ? input.now : null,
       lastActivityAt: input.now,
@@ -161,6 +166,13 @@ class MemoryConversationStore implements ConversationStore {
       },
     });
     return updated;
+  }
+
+  async recordAudit(input: {
+    conversation: PersistedConversation;
+    audit: AuditInput;
+  }) {
+    this.audits.push(input.audit);
   }
 
   private require(publicReference: string) {
@@ -330,6 +342,144 @@ describe("ConversationService", () => {
     expect(serialized).not.toContain("debt-001");
     expect(serialized).not.toContain("offer-");
     expect(store.audits.at(-1)?.eventType).toBe("IDENTITY_VERIFIED");
+  });
+
+  it("does not list debts before identity verification", async () => {
+    const { service } = setup();
+    const created = await service.create("jf-demo");
+
+    await expect(
+      service.listDebts(
+        created.conversation.id,
+        created.token,
+        "request-debts-before-identity",
+      ),
+    ).rejects.toMatchObject({
+      code: "IDENTITY_VERIFICATION_REQUIRED",
+      status: 403,
+    });
+  });
+
+  it("groups provider debts by creditor without changing values", async () => {
+    const { store, service, created } = await createAndIdentify();
+    await service.verifyIdentity(
+      created.conversation.id,
+      created.token,
+      "option-green",
+      "request-verify-for-debts",
+    );
+
+    const result = await service.listDebts(
+      created.conversation.id,
+      created.token,
+      "request-list-debts",
+    );
+
+    expect(result.creditors).toHaveLength(2);
+    expect(result.creditors.map((creditor) => creditor.creditorRef)).toEqual([
+      "creditor-horizonte",
+      "creditor-boreal",
+    ]);
+    expect(result.creditors[0].debts[0]).toEqual({
+      debtRef: "debt-001",
+      description: "Contrato fictício Horizonte 2026",
+      amount: { amountInCents: 48_750, currency: "BRL" },
+      dueDate: "2026-06-10",
+      status: "OPEN",
+    });
+    expect(store.audits.at(-1)).toMatchObject({
+      eventType: "DEBTS_LISTED",
+      metadata: { debtCount: 2 },
+    });
+  });
+
+  it("returns only provider-authorized offers and marks expiration safely", async () => {
+    const { store, service, created } = await createAndIdentify();
+    await service.verifyIdentity(
+      created.conversation.id,
+      created.token,
+      "option-green",
+      "request-verify-for-offers",
+    );
+
+    const result = await service.listAuthorizedOffers(
+      created.conversation.id,
+      created.token,
+      "debt-001",
+      "request-list-offers",
+    );
+
+    expect(result.offers.map((offer) => offer.offerRef)).toEqual([
+      "offer-cash-001",
+      "offer-installment-001",
+      "offer-expired-001",
+    ]);
+    expect(result.offers[0]).toMatchObject({
+      total: { amountInCents: 39_000, currency: "BRL" },
+      installmentCount: 1,
+      installmentAmount: { amountInCents: 39_000, currency: "BRL" },
+      status: "AVAILABLE",
+    });
+    expect(result.offers.at(-1)?.status).toBe("EXPIRED");
+    expect(JSON.stringify(result)).not.toContain("offer-disabled-001");
+    expect(store.audits.at(-1)?.eventType).toBe(
+      "AUTHORIZED_OFFERS_LISTED",
+    );
+  });
+
+  it("keeps overlapping debt references isolated by organization", async () => {
+    const { service } = setup();
+    const jf = await service.create("jf-demo");
+    await service.identify(
+      jf.conversation.id,
+      jf.token,
+      "DEMO-AURORA-001",
+      "request-jf-identify",
+    );
+    await service.verifyIdentity(
+      jf.conversation.id,
+      jf.token,
+      "option-green",
+      "request-jf-verify",
+    );
+
+    const atlas = await service.create("atlas-demo");
+    await service.identify(
+      atlas.conversation.id,
+      atlas.token,
+      "DEMO-BENTO-002",
+      "request-atlas-identify",
+    );
+    await service.verifyIdentity(
+      atlas.conversation.id,
+      atlas.token,
+      "option-star",
+      "request-atlas-verify",
+    );
+
+    const jfDebt = await service.getDebt(
+      jf.conversation.id,
+      jf.token,
+      "debt-001",
+      "request-jf-debt",
+    );
+    const atlasDebt = await service.getDebt(
+      atlas.conversation.id,
+      atlas.token,
+      "debt-001",
+      "request-atlas-debt",
+    );
+
+    expect(jfDebt.amount.amountInCents).toBe(48_750);
+    expect(atlasDebt.amount.amountInCents).toBe(91_200);
+    await expect(
+      service.getDebt(
+        atlas.conversation.id,
+        jf.token,
+        "debt-001",
+        "request-cross-organization",
+      ),
+    ).rejects.toMatchObject({ code: "SESSION_INVALID" });
   });
 
   it("prevents negotiation after opt-out", async () => {

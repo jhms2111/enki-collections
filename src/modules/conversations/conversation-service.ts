@@ -1,4 +1,10 @@
 import type { DebtProvider } from "@/modules/debt-provider/debt-provider";
+import type {
+  AuthorizedOffer,
+  DebtDetails,
+  DebtSummary,
+  VerifiedDebtorContext,
+} from "@/modules/debt-provider/debt-provider.types";
 import type { OrganizationContext } from "@/modules/organizations/organization-context";
 import {
   generatePublicReference,
@@ -10,6 +16,12 @@ import { ApplicationError } from "@/shared/errors/application-error";
 import type { ConversationStore } from "./conversation-store";
 import { toPublicConversationDto } from "./conversation.dto";
 import type { PersistedConversation } from "./persistence.types";
+import {
+  presentAuthorizedOffers,
+  presentDebtDetails,
+  presentGroupedDebts,
+} from "./debt.dto";
+import { verifiedDebtorContextSchema } from "./debt.schemas";
 
 export class ConversationService {
   constructor(
@@ -166,6 +178,9 @@ export class ConversationService {
       conversation,
       verified: verification.verified,
       verifiedDebtorRef,
+      verifiedDebtorContext: verification.verified
+        ? verification.debtorContext
+        : undefined,
       maxAttempts: this.maxIdentityAttempts,
       now,
       audit: {
@@ -189,6 +204,68 @@ export class ConversationService {
             0,
           ),
     };
+  }
+
+  async listDebts(
+    publicReference: string,
+    token: string | undefined,
+    requestId: string,
+  ) {
+    const conversation = await this.authenticate(publicReference, token);
+    const debtor = this.requireVerifiedContext(conversation);
+    const organization = this.organizationContext(conversation, requestId);
+    const debts: readonly DebtSummary[] = await this.debtProvider.listDebts(
+      organization,
+      debtor,
+    );
+    await this.auditFinancialRead(
+      conversation,
+      "DEBTS_LISTED",
+      { debtCount: debts.length },
+    );
+    return presentGroupedDebts(debts);
+  }
+
+  async getDebt(
+    publicReference: string,
+    token: string | undefined,
+    debtRef: string,
+    requestId: string,
+  ) {
+    const conversation = await this.authenticate(publicReference, token);
+    const debtor = this.requireVerifiedContext(conversation);
+    const organization = this.organizationContext(conversation, requestId);
+    const debt: DebtDetails = await this.debtProvider.getDebt(
+      organization,
+      debtor,
+      debtRef,
+    );
+    await this.auditFinancialRead(conversation, "DEBT_VIEWED", {
+      debtRef,
+    });
+    return presentDebtDetails(debt);
+  }
+
+  async listAuthorizedOffers(
+    publicReference: string,
+    token: string | undefined,
+    debtRef: string,
+    requestId: string,
+  ) {
+    const conversation = await this.authenticate(publicReference, token);
+    const debtor = this.requireVerifiedContext(conversation);
+    const organization = this.organizationContext(conversation, requestId);
+    const offers: readonly AuthorizedOffer[] =
+      await this.debtProvider.listAuthorizedOffers(
+        organization,
+        debtor,
+        debtRef,
+      );
+    await this.auditFinancialRead(conversation, "AUTHORIZED_OFFERS_LISTED", {
+      debtRef,
+      offerCount: offers.length,
+    });
+    return presentAuthorizedOffers(offers, this.now());
   }
 
   private async authenticate(
@@ -237,6 +314,43 @@ export class ConversationService {
         423,
       );
     }
+  }
+
+  private requireVerifiedContext(
+    conversation: PersistedConversation,
+  ): VerifiedDebtorContext {
+    this.assertNegotiationAllowed(conversation);
+    if (
+      conversation.identityStatus !== "VERIFIED" ||
+      conversation.state !== "IDENTITY_VERIFIED" ||
+      !conversation.verifiedDebtorContext
+    ) {
+      throw new ApplicationError(
+        "IDENTITY_VERIFICATION_REQUIRED",
+        "Validação de identidade obrigatória.",
+        403,
+      );
+    }
+
+    return verifiedDebtorContextSchema.parse(
+      conversation.verifiedDebtorContext,
+    );
+  }
+
+  private async auditFinancialRead(
+    conversation: PersistedConversation,
+    eventType: string,
+    metadata: Readonly<Record<string, string | number>>,
+  ): Promise<void> {
+    await this.store.recordAudit({
+      conversation,
+      audit: {
+        eventType,
+        actor: "DEBTOR",
+        metadata,
+        occurredAt: this.now(),
+      },
+    });
   }
 
   private organizationContext(

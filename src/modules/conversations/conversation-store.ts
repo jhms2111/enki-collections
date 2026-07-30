@@ -3,6 +3,7 @@ import type {
   PersistedConversation,
   PersistedOrganization,
 } from "./persistence.types";
+import type { VerifiedDebtorContext } from "@/modules/debt-provider/debt-provider.types";
 
 export interface ConversationStore {
   findActiveOrganizationBySlug(
@@ -35,8 +36,14 @@ export interface ConversationStore {
     conversation: PersistedConversation;
     verified: boolean;
     verifiedDebtorRef?: string;
+    verifiedDebtorContext?: VerifiedDebtorContext;
     maxAttempts: number;
     now: Date;
     audit: AuditInput;
   }): Promise<PersistedConversation>;
+
+  recordAudit(input: {
+    conversation: PersistedConversation;
+    audit: AuditInput;
+  }): Promise<void>;
 }
