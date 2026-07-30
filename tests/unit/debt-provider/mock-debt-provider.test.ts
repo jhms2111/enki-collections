@@ -81,6 +81,25 @@ describe("MockDebtProvider", () => {
     expect(challenge).not.toHaveProperty("correctOptionRef");
   });
 
+  it("restores a server-only challenge after a provider process restart", async () => {
+    const identification = await provider.identifyDebtor(jfOrganization, {
+      type: "DEMO_ID",
+      value: "DEMO-AURORA-001",
+    });
+    const restartedProvider = new MockDebtProvider(
+      undefined,
+      () => new Date("2026-07-29"),
+    );
+
+    const challenge = await restartedProvider.getIdentityChallenge(
+      jfOrganization,
+      identification!.identificationRef,
+    );
+
+    expect(challenge.challengeRef).toBe("challenge-aurora-horizonte");
+    expect(challenge).not.toHaveProperty("correctOptionRef");
+  });
+
   it("blocks identity verification after consecutive failures", async () => {
     const identification = await provider.identifyDebtor(jfOrganization, {
       type: "DEMO_ID",

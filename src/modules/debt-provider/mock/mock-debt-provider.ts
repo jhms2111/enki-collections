@@ -508,13 +508,47 @@ export class MockDebtProvider implements DebtProvider {
     organization: OrganizationContext,
     identificationRef: string,
   ): IdentificationState {
-    const identification = this.identifications.get(
-      this.scopedKey(organization.organizationId, identificationRef),
+    const storageKey = this.scopedKey(
+      organization.organizationId,
+      identificationRef,
     );
-    if (!identification) {
-      throw this.notFound();
+    const existing = this.identifications.get(storageKey);
+    if (existing) {
+      return existing;
     }
-    return identification;
+
+    const fixture = this.getOrganization(organization);
+    const identifiers = new Set(
+      fixture.creditors.flatMap((creditor) =>
+        creditor.debtors.map((debtor) => debtor.demoIdentifier),
+      ),
+    );
+    for (const identifier of identifiers) {
+      const expectedRef = opaqueRef(
+        "identification",
+        `${organization.organizationId}:${identifier}`,
+      );
+      if (expectedRef !== identificationRef) {
+        continue;
+      }
+
+      const debtors = fixture.creditors.flatMap((creditor) =>
+        creditor.debtors.filter(
+          (debtor) => debtor.demoIdentifier === identifier,
+        ),
+      );
+      const restored: IdentificationState = {
+        organizationId: organization.organizationId,
+        identificationRef,
+        debtors,
+        attempts: 0,
+        blocked: false,
+      };
+      this.identifications.set(storageKey, restored);
+      return restored;
+    }
+
+    throw this.notFound();
   }
 
   private assertVerifiedContext(

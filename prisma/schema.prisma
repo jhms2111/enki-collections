@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+enum ConversationChannel {
+  WEBCHAT
+}
+
+enum ConversationState {
+  STARTED
+  IDENTIFIED
+  IDENTITY_VERIFIED
+  DEBT_SELECTED
+  OFFER_SELECTED
+  OFFER_ACCEPTED
+  HUMAN_HANDOFF
+  OPTED_OUT
+  IDENTITY_BLOCKED
+  CLOSED
+}
+
+enum IdentityStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  BLOCKED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageActor {
+  DEBTOR
+  SYSTEM
+  HUMAN_AGENT
+}
+
+enum AuditActor {
+  DEBTOR
+  SYSTEM
+  HUMAN_AGENT
+}
+
+model Organization {
+  id            String             @id @default(cuid())
+  slug          String             @unique @db.VarChar(80)
+  externalRef   String             @unique @db.VarChar(160)
+  name          String             @db.VarChar(160)
+  status        OrganizationStatus @default(ACTIVE)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  conversations Conversation[]
+  messages      Message[]
+  auditEvents   AuditEvent[]
+  idempotency   IdempotencyRecord[]
+}
+
+model Conversation {
+  id                     String              @id @default(cuid())
+  organizationId         String
+  publicReference        String              @unique @db.VarChar(80)
+  sessionTokenHash       String              @db.Char(64)
+  channel                ConversationChannel @default(WEBCHAT)
+  state                  ConversationState   @default(STARTED)
+  debtorRef              String?             @db.VarChar(160)
+  identityStatus         IdentityStatus      @default(NOT_STARTED)
+  failedIdentityAttempts Int                 @default(0)
+  identityLockedAt       DateTime?
+  startedAt              DateTime            @default(now())
+  lastActivityAt         DateTime            @default(now())
+  endedAt                DateTime?
+  optedOutAt             DateTime?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  organization           Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  messages               Message[]
+  auditEvents            AuditEvent[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, lastActivityAt])
+  @@index([organizationId, sessionTokenHash])
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  organizationId String
+  conversationId String
+  direction      MessageDirection
+  actor          MessageActor
+  content        String           @db.VarChar(2000)
+  intent         String?          @db.VarChar(80)
+  createdAt      DateTime         @default(now())
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation   Conversation     @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@index([organizationId, conversationId, createdAt])
+}
+
+model AuditEvent {
+  id             String       @id @default(cuid())
+  organizationId String
+  conversationId String
+  eventType      String       @db.VarChar(100)
+  actor          AuditActor
+  entityType     String?      @db.VarChar(80)
+  entityRef      String?      @db.VarChar(160)
+  metadata       Json
+  occurredAt     DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation   Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@index([organizationId, conversationId, occurredAt])
+}
+
+model IdempotencyRecord {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  operation          String       @db.VarChar(80)
+  idempotencyKey     String       @db.VarChar(128)
+  requestFingerprint String       @db.Char(64)
+  responsePayload    Json
+  createdAt          DateTime     @default(now())
+  expiresAt          DateTime?
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, operation, idempotencyKey])
+  @@index([expiresAt])
+}

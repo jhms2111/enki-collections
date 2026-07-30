@@ -20,7 +20,10 @@ export function toErrorResponse(error: unknown) {
     );
   }
 
-  console.error({ requestId, error });
+  console.error({
+    requestId,
+    errorName: error instanceof Error ? error.name : "UnknownError",
+  });
 
   return NextResponse.json(
     {
@@ -33,4 +36,3 @@ export function toErrorResponse(error: unknown) {
     { status: 500 },
   );
 }
-
