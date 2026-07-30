@@ -107,7 +107,7 @@ export interface HumanHandoffRepository {
       id: string;
       conversationId: string;
       reason: string;
-      idempotencyKey: string;
+      idempotencyKeyHash: string;
       requestedAt: Date;
     }>,
   ): Promise<void>;
@@ -141,14 +141,15 @@ export interface IdempotencyRepository {
   find<Result>(
     organization: OrganizationContext,
     operation: IdempotentOperation,
-    key: string,
+    resourceRef: string,
+    keyHash: string,
   ): Promise<Readonly<{ payloadDigest: string; result: Result }> | null>;
   save<Result>(
     organization: OrganizationContext,
     operation: IdempotentOperation,
-    key: string,
+    resourceRef: string,
+    keyHash: string,
     payloadDigest: string,
     result: Result,
   ): Promise<void>;
 }
-

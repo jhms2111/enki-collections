@@ -303,7 +303,11 @@ export class MockDebtProvider implements DebtProvider {
       organization,
       "ACCEPT_OFFER",
       input.idempotencyKey,
-      input,
+      {
+        offerRef: input.offerRef,
+        expectedProviderVersion: input.expectedProviderVersion,
+        expectedTerms: input.expectedTerms,
+      },
       () => {
         const fixture = this.findOffer(organization, debtor, input.offerRef);
 

@@ -264,7 +264,7 @@ describe("MockDebtProvider", () => {
     await expect(
       provider.acceptOffer(jfOrganization, debtor, {
         ...input,
-        acceptedAt: "2026-07-29T12:01:00.000Z",
+        expectedProviderVersion: "different-version",
       }),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
   });

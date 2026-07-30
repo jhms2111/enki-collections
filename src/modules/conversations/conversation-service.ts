@@ -322,7 +322,9 @@ export class ConversationService {
     this.assertNegotiationAllowed(conversation);
     if (
       conversation.identityStatus !== "VERIFIED" ||
-      conversation.state !== "IDENTITY_VERIFIED" ||
+      !["IDENTITY_VERIFIED", "OFFER_ACCEPTED"].includes(
+        conversation.state,
+      ) ||
       !conversation.verifiedDebtorContext
     ) {
       throw new ApplicationError(

@@ -66,6 +66,7 @@ export function presentAuthorizedOffers(
   return {
     offers: offers.map((offer) => ({
       offerRef: offer.offerRef,
+      providerVersion: offer.providerVersion,
       debtRef: offer.debtRef,
       kind: offer.terms.kind,
       total: presentMoney(offer.terms.total),

@@ -33,6 +33,7 @@ try {
       "Message",
       "AuditEvent",
       "IdempotencyRecord",
+      "OfferAcceptance",
     ]],
   );
   const forbiddenTables = await pool.query(
@@ -50,12 +51,32 @@ try {
        AND column_name = 'verifiedDebtorContext'
        AND data_type = 'jsonb'`,
   );
+  const idempotencyHashColumns = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND (
+         (table_name = 'IdempotencyRecord'
+          AND column_name = 'idempotencyKeyHash')
+         OR
+         (table_name = 'OfferAcceptance'
+          AND column_name = 'idempotencyKeyHash')
+       )`,
+  );
+  const plaintextIdempotencyColumns = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND column_name = 'idempotencyKey'`,
+  );
 
   const healthy =
     organization.rows[0]?.count === 1 &&
-    allowedTables.rowCount === 5 &&
+    allowedTables.rowCount === 6 &&
     forbiddenTables.rowCount === 0 &&
-    providerContextColumn.rows[0]?.count === 1;
+    providerContextColumn.rows[0]?.count === 1 &&
+    idempotencyHashColumns.rows[0]?.count === 2 &&
+    plaintextIdempotencyColumns.rows[0]?.count === 0;
 
   if (!healthy) {
     throw new Error("A fundação persistida não corresponde ao escopo aprovado.");
@@ -68,6 +89,9 @@ try {
       forbiddenFinancialTables: forbiddenTables.rowCount,
       verifiedProviderContextColumns:
         providerContextColumn.rows[0].count,
+      idempotencyHashColumns: idempotencyHashColumns.rows[0].count,
+      plaintextIdempotencyColumns:
+        plaintextIdempotencyColumns.rows[0].count,
     }) + "\n",
   );
 } catch (error) {

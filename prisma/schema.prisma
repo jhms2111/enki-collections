@@ -66,6 +66,7 @@ model Organization {
   messages      Message[]
   auditEvents   AuditEvent[]
   idempotency   IdempotencyRecord[]
+  offerAcceptances OfferAcceptance[]
 }
 
 model Conversation {
@@ -89,6 +90,7 @@ model Conversation {
   organization           Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   messages               Message[]
   auditEvents            AuditEvent[]
+  offerAcceptances       OfferAcceptance[]
 
   @@unique([id, organizationId])
   @@index([organizationId, lastActivityAt])
@@ -130,13 +132,35 @@ model IdempotencyRecord {
   id                 String       @id @default(cuid())
   organizationId     String
   operation          String       @db.VarChar(80)
-  idempotencyKey     String       @db.VarChar(128)
+  resourceRef        String       @db.VarChar(320)
+  idempotencyKeyHash String       @db.Char(64)
   requestFingerprint String       @db.Char(64)
   responsePayload    Json
   createdAt          DateTime     @default(now())
   expiresAt          DateTime?
   organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, operation, idempotencyKey])
+  @@unique([organizationId, operation, resourceRef, idempotencyKeyHash])
   @@index([expiresAt])
+}
+
+model OfferAcceptance {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  conversationId        String
+  publicReference       String       @unique @db.VarChar(80)
+  debtRef               String       @db.VarChar(160)
+  offerRef              String       @db.VarChar(160)
+  providerAcceptanceRef String       @db.VarChar(160)
+  providerVersion       String       @db.VarChar(160)
+  termsSnapshot         Json
+  idempotencyKeyHash    String       @db.Char(64)
+  acceptedAt            DateTime
+  createdAt             DateTime     @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, providerAcceptanceRef])
+  @@unique([organizationId, conversationId, offerRef, idempotencyKeyHash])
+  @@index([organizationId, conversationId, acceptedAt])
 }

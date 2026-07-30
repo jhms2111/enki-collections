@@ -12,15 +12,17 @@ export class PrismaIdempotencyRepository
   async find<Result>(
     organization: OrganizationContext,
     operation: IdempotentOperation,
-    key: string,
+    resourceRef: string,
+    keyHash: string,
   ): Promise<Readonly<{ payloadDigest: string; result: Result }> | null> {
     assertOrganizationContext(organization);
     const record = await this.client.idempotencyRecord.findUnique({
       where: {
-        organizationId_operation_idempotencyKey: {
+        organizationId_operation_resourceRef_idempotencyKeyHash: {
           organizationId: organization.organizationId,
           operation,
-          idempotencyKey: key,
+          resourceRef,
+          idempotencyKeyHash: keyHash,
         },
       },
       select: {
@@ -40,7 +42,8 @@ export class PrismaIdempotencyRepository
   async save<Result>(
     organization: OrganizationContext,
     operation: IdempotentOperation,
-    key: string,
+    resourceRef: string,
+    keyHash: string,
     payloadDigest: string,
     result: Result,
   ): Promise<void> {
@@ -49,7 +52,8 @@ export class PrismaIdempotencyRepository
       data: {
         organizationId: organization.organizationId,
         operation,
-        idempotencyKey: key,
+        resourceRef,
+        idempotencyKeyHash: keyHash,
         requestFingerprint: payloadDigest,
         responsePayload: result as Prisma.InputJsonValue,
       },

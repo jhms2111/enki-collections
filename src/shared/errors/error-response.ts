@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 
 import { ApplicationError } from "./application-error";
 
@@ -17,6 +18,19 @@ export function toErrorResponse(error: unknown) {
         },
       },
       { status: error.status },
+    );
+  }
+
+  if (error instanceof ZodError) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "INVALID_INPUT",
+          message: "A entrada informada é inválida.",
+          requestId,
+        },
+      },
+      { status: 400 },
     );
   }
 
