@@ -20,6 +20,7 @@ async function main() {
       externalRef: "ext_org_7f4c2a91d8e64b5ca0f3",
       name: "JF Demo — Organização Fictícia",
       status: "ACTIVE",
+      timeZone: "America/Sao_Paulo",
     },
     create: {
       id: "org-jf-demo",
@@ -27,6 +28,7 @@ async function main() {
       externalRef: "ext_org_7f4c2a91d8e64b5ca0f3",
       name: "JF Demo — Organização Fictícia",
       status: "ACTIVE",
+      timeZone: "America/Sao_Paulo",
     },
   });
 }

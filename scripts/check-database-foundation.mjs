@@ -34,6 +34,9 @@ try {
       "AuditEvent",
       "IdempotencyRecord",
       "OfferAcceptance",
+      "PaymentPromise",
+      "PaymentReport",
+      "Dispute",
     ]],
   );
   const forbiddenTables = await pool.query(
@@ -61,6 +64,15 @@ try {
          OR
          (table_name = 'OfferAcceptance'
           AND column_name = 'idempotencyKeyHash')
+         OR
+         (table_name = 'PaymentPromise'
+          AND column_name = 'idempotencyKeyHash')
+         OR
+         (table_name = 'PaymentReport'
+          AND column_name = 'idempotencyKeyHash')
+         OR
+         (table_name = 'Dispute'
+          AND column_name = 'idempotencyKeyHash')
        )`,
   );
   const plaintextIdempotencyColumns = await pool.query(
@@ -72,10 +84,10 @@ try {
 
   const healthy =
     organization.rows[0]?.count === 1 &&
-    allowedTables.rowCount === 6 &&
+    allowedTables.rowCount === 9 &&
     forbiddenTables.rowCount === 0 &&
     providerContextColumn.rows[0]?.count === 1 &&
-    idempotencyHashColumns.rows[0]?.count === 2 &&
+    idempotencyHashColumns.rows[0]?.count === 5 &&
     plaintextIdempotencyColumns.rows[0]?.count === 0;
 
   if (!healthy) {

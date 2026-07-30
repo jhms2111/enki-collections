@@ -29,6 +29,8 @@ import { ApplicationError } from "@/shared/errors/application-error";
 
 const now = new Date("2026-07-30T12:00:00.000Z");
 const secret = "acceptance-test-secret-with-at-least-32-characters";
+const idempotencySecret =
+  "idempotency-test-secret-with-at-least-sixty-four-characters-0000000000";
 const rawKey = "client-key-acceptance-0001";
 const token = "test-session-token";
 
@@ -255,6 +257,7 @@ async function createSetup(provider = new CountingMockDebtProvider()) {
     id: "conversation-internal-001",
     organizationId: organization.organizationId,
     organizationExternalRef: "ext-demo",
+    organizationTimeZone: "America/Sao_Paulo",
     publicReference: "conv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     state: "IDENTITY_VERIFIED",
     debtorRef: "debtor-001",
@@ -275,6 +278,7 @@ async function createSetup(provider = new CountingMockDebtProvider()) {
     acceptanceStore,
     provider,
     secret,
+    idempotencySecret,
     3_600,
     () => now,
   );
@@ -338,6 +342,7 @@ describe("OfferAcceptanceService", () => {
       setup.acceptanceStore,
       setup.provider,
       secret,
+      idempotencySecret,
       3_600,
       () => now,
     );
@@ -513,6 +518,7 @@ describe("OfferAcceptanceService", () => {
       setup.acceptanceStore,
       restartedProvider,
       secret,
+      idempotencySecret,
       3_600,
       () => now,
     );

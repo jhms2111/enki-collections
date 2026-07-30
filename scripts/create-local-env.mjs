@@ -9,10 +9,12 @@ if (existsSync(envPath)) {
 }
 
 const sessionSecret = randomBytes(48).toString("base64url");
+const idempotencySecret = randomBytes(48).toString("base64url");
 const contents = [
   "DATABASE_URL=",
   "DIRECT_URL=",
   `CONVERSATION_SESSION_SECRET=${sessionSecret}`,
+  `IDEMPOTENCY_HMAC_SECRET=${idempotencySecret}`,
   "APP_URL=http://localhost:3000",
   "NODE_ENV=development",
   "",

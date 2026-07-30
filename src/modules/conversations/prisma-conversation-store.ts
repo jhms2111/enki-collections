@@ -17,6 +17,7 @@ const conversationInclude = {
   organization: {
     select: {
       externalRef: true,
+      timeZone: true,
     },
   },
   messages: {
@@ -317,6 +318,7 @@ export class PrismaConversationStore implements ConversationStore {
       id: conversation.id,
       organizationId: conversation.organizationId,
       organizationExternalRef: conversation.organization.externalRef,
+      organizationTimeZone: conversation.organization.timeZone,
       publicReference: conversation.publicReference,
       state: conversation.state,
       debtorRef: conversation.debtorRef,

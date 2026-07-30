@@ -18,6 +18,7 @@ export type PersistedConversation = Readonly<{
   id: string;
   organizationId: string;
   organizationExternalRef: string;
+  organizationTimeZone: string;
   publicReference: string;
   state:
     | "STARTED"

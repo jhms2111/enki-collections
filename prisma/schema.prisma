@@ -60,6 +60,7 @@ model Organization {
   externalRef   String             @unique @db.VarChar(160)
   name          String             @db.VarChar(160)
   status        OrganizationStatus @default(ACTIVE)
+  timeZone      String             @default("UTC") @db.VarChar(64)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   conversations Conversation[]
@@ -67,6 +68,9 @@ model Organization {
   auditEvents   AuditEvent[]
   idempotency   IdempotencyRecord[]
   offerAcceptances OfferAcceptance[]
+  paymentPromises PaymentPromise[]
+  paymentReports PaymentReport[]
+  disputes      Dispute[]
 }
 
 model Conversation {
@@ -91,6 +95,9 @@ model Conversation {
   messages               Message[]
   auditEvents            AuditEvent[]
   offerAcceptances       OfferAcceptance[]
+  paymentPromises        PaymentPromise[]
+  paymentReports         PaymentReport[]
+  disputes               Dispute[]
 
   @@unique([id, organizationId])
   @@index([organizationId, lastActivityAt])
@@ -163,4 +170,65 @@ model OfferAcceptance {
   @@unique([organizationId, providerAcceptanceRef])
   @@unique([organizationId, conversationId, offerRef, idempotencyKeyHash])
   @@index([organizationId, conversationId, acceptedAt])
+}
+
+model PaymentPromise {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  conversationId        String
+  publicReference       String       @unique @db.VarChar(80)
+  debtRef               String       @db.VarChar(160)
+  offerRef              String?      @db.VarChar(160)
+  providerReference     String       @db.VarChar(160)
+  promisedDate          DateTime     @db.Date
+  timeZone              String       @db.VarChar(64)
+  status                String       @db.VarChar(40)
+  idempotencyKeyHash    String       @db.Char(64)
+  createdAt             DateTime     @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, providerReference])
+  @@unique([organizationId, conversationId, debtRef, idempotencyKeyHash])
+  @@index([organizationId, conversationId, createdAt])
+}
+
+model PaymentReport {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  conversationId        String
+  publicReference       String       @unique @db.VarChar(80)
+  debtRef               String       @db.VarChar(160)
+  providerReference     String       @db.VarChar(160)
+  reportedAt            DateTime
+  receivedAt            DateTime
+  status                String       @db.VarChar(40)
+  idempotencyKeyHash    String       @db.Char(64)
+  createdAt             DateTime     @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, providerReference])
+  @@unique([organizationId, conversationId, debtRef, idempotencyKeyHash])
+  @@index([organizationId, conversationId, receivedAt])
+}
+
+model Dispute {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  conversationId        String
+  publicReference       String       @unique @db.VarChar(80)
+  debtRef               String       @db.VarChar(160)
+  providerReference     String       @db.VarChar(160)
+  reasonCode            String       @db.VarChar(40)
+  description           String?      @db.VarChar(300)
+  status                String       @db.VarChar(40)
+  idempotencyKeyHash    String       @db.Char(64)
+  createdAt             DateTime     @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, providerReference])
+  @@unique([organizationId, conversationId, debtRef, idempotencyKeyHash])
+  @@index([organizationId, conversationId, createdAt])
 }

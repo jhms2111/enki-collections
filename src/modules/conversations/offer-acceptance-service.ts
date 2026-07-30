@@ -39,6 +39,7 @@ export class OfferAcceptanceService {
     private readonly acceptanceStore: AcceptanceStore,
     private readonly debtProvider: DebtProvider,
     private readonly sessionSecret: string,
+    private readonly idempotencySecret: string,
     private readonly sessionMaxAgeSeconds: number,
     private readonly now: () => Date = () => new Date(),
   ) {}
@@ -292,7 +293,7 @@ export class OfferAcceptanceService {
       resourceRef: input.resourceRef,
       keyHash: hashIdempotencyKey(
         input.idempotencyKey,
-        this.sessionSecret,
+        this.idempotencySecret,
       ),
       requestFingerprint: fingerprintPayload(input.payload),
     };
@@ -304,7 +305,7 @@ export class OfferAcceptanceService {
       operation: scope.operation,
       resourceRef: scope.resourceRef,
       keyHash: scope.keyHash,
-      secret: this.sessionSecret,
+      secret: this.idempotencySecret,
     });
   }
 

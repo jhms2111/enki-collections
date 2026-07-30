@@ -21,7 +21,12 @@ export type PersistedOfferAcceptance = Readonly<{
 
 export type IdempotencyScope = Readonly<{
   organizationId: string;
-  operation: "ACCEPT_OFFER" | "CREATE_PAYMENT_INSTRUMENT";
+  operation:
+    | "ACCEPT_OFFER"
+    | "CREATE_PAYMENT_INSTRUMENT"
+    | "REGISTER_PAYMENT_PROMISE"
+    | "REPORT_PAYMENT"
+    | "OPEN_DISPUTE";
   resourceRef: string;
   keyHash: string;
   requestFingerprint: string;

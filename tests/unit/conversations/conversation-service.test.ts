@@ -63,6 +63,7 @@ class MemoryConversationStore implements ConversationStore {
       id: `internal-${input.publicReference}`,
       organizationId: input.organization.id,
       organizationExternalRef: input.organization.externalRef,
+      organizationTimeZone: "America/Sao_Paulo",
       publicReference: input.publicReference,
       sessionTokenHash: input.sessionTokenHash,
       state: "STARTED" as const,

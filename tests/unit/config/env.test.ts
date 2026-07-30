@@ -7,6 +7,8 @@ const validEnvironment = {
   APP_URL: "http://localhost:3000",
   DATABASE_URL: "postgresql://demo:demo@localhost:5432/demo",
   CONVERSATION_SESSION_SECRET: "a-demo-secret-with-at-least-32-characters",
+  IDEMPOTENCY_HMAC_SECRET:
+    "a-dedicated-idempotency-secret-with-at-least-sixty-four-characters-000",
 };
 
 describe("getRuntimeEnv", () => {
@@ -22,6 +24,22 @@ describe("getRuntimeEnv", () => {
       getRuntimeEnv({
         ...validEnvironment,
         CONVERSATION_SESSION_SECRET: "too-short",
+      }),
+    ).toThrow();
+  });
+
+  it("requires a long, dedicated idempotency secret", () => {
+    expect(() =>
+      getRuntimeEnv({
+        ...validEnvironment,
+        IDEMPOTENCY_HMAC_SECRET: "too-short",
+      }),
+    ).toThrow();
+    expect(() =>
+      getRuntimeEnv({
+        ...validEnvironment,
+        CONVERSATION_SESSION_SECRET:
+          validEnvironment.IDEMPOTENCY_HMAC_SECRET,
       }),
     ).toThrow();
   });

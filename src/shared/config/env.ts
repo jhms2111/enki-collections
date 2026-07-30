@@ -5,6 +5,7 @@ const runtimeEnvSchema = z.object({
   APP_URL: z.string().url().default("http://localhost:3000"),
   DATABASE_URL: z.string().url(),
   CONVERSATION_SESSION_SECRET: z.string().min(32),
+  IDEMPOTENCY_HMAC_SECRET: z.string().min(64),
   ADMIN_DEMO_SECRET: z.string().min(32).optional(),
   CHAT_MAX_MESSAGE_LENGTH: z.coerce.number().int().positive().default(1_200),
   IDENTITY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
@@ -15,7 +16,14 @@ const runtimeEnvSchema = z.object({
     .max(86_400)
     .default(3_600),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-});
+}).refine(
+  (env) =>
+    env.IDEMPOTENCY_HMAC_SECRET !== env.CONVERSATION_SESSION_SECRET,
+  {
+    path: ["IDEMPOTENCY_HMAC_SECRET"],
+    message: "O segredo de idempotência deve ser dedicado.",
+  },
+);
 
 export type RuntimeEnv = z.infer<typeof runtimeEnvSchema>;
 
