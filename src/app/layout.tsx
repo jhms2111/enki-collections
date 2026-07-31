@@ -5,6 +5,17 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ENKI Collections — Demonstração",
   description: "Ambiente demonstrativo de negociação com dados fictícios.",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
 };
 
 export default function RootLayout({

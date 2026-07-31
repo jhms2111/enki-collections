@@ -50,7 +50,13 @@ function safeError(error: unknown) {
   return "Não foi possível concluir a solicitação. Tente novamente.";
 }
 
-export function DemoExperience({ slug }: { slug: string }) {
+export function DemoExperience({
+  slug,
+  version,
+}: {
+  slug: string;
+  version: string;
+}) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [challenge, setChallenge] = useState<PublicChallenge | null>(null);
   const [creditors, setCreditors] = useState<readonly CreditorGroup[]>([]);
@@ -529,7 +535,9 @@ export function DemoExperience({ slug }: { slug: string }) {
 
       <footer>
         <strong>DEMONSTRAÇÃO — SEM VALOR FINANCEIRO</strong>
-        <span>Sem IA · Sem WhatsApp · Sem integração financeira real</span>
+        <span>
+          Sem IA · Sem WhatsApp · Sem integração financeira real · v{version}
+        </span>
       </footer>
     </main>
   );

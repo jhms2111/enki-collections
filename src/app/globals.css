@@ -64,6 +64,10 @@ legend { margin-bottom: 8px; }
 .blocked { border-color: #e3b6b6; background: #fff8f7; }
 .alert, .loading { margin-bottom: 18px; padding: 14px 18px; border-radius: 12px; }
 .alert.error { background: #fff0ef; border: 1px solid #e3b6b6; color: var(--danger); }
+.alert.rate-limit { background: var(--warning); border: 1px solid #d5a43e; color: #654a12; }
+.alert.unavailable { background: #eef1f3; border: 1px solid #bbc4c9; color: #3f4d54; }
+.alert strong, .alert span { display: block; }
+.alert strong { margin-bottom: 4px; }
 .loading { background: var(--mint); color: var(--brand-dark); }
 .section-heading { display: flex; justify-content: space-between; align-items: end; margin-block: 42px 22px; }
 .creditor-grid { display: grid; gap: 20px; padding-bottom: 50px; }
@@ -105,6 +109,12 @@ dt { color: var(--muted); } dd { margin: 0; font-weight: 700; text-align: right;
 .receipt p { opacity: .82; font-size: 13px; }
 footer { display: flex; justify-content: space-between; gap: 20px; padding: 30px 0 44px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 footer strong { color: var(--ink); }
+.access-page { min-height: 100vh; background: radial-gradient(circle at 70% 10%, #dcefe7, transparent 30%), var(--cream); }
+.access-card { width: min(520px, calc(100% - 28px)); margin: 9vh auto 40px; padding: 38px; border: 1px solid var(--line); border-radius: 24px; background: var(--paper); box-shadow: var(--shadow); }
+.access-card h1 { margin: 16px 0 10px; font-family: Georgia, serif; font-size: clamp(32px, 6vw, 46px); font-weight: 500; line-height: 1.05; }
+.access-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.6; }
+.access-brand { margin-bottom: 42px; }
+.access-note { display: block; margin-top: 22px; color: var(--muted); line-height: 1.5; }
 
 @media (max-width: 800px) {
   .demo-header, .hero, .stepper, .panel, .negotiation, .section-heading, .creditor-grid, .alert, .loading, .receipt, footer { width: min(100% - 24px, 1160px); }
@@ -121,6 +131,7 @@ footer strong { color: var(--ink); }
   .amount-card { min-width: 0; }
   .panel { padding: 24px 18px; }
   .receipt { bottom: 8px; }
+  .access-card { margin-top: 5vh; padding: 28px 20px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

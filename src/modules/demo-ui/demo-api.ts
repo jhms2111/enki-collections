@@ -78,13 +78,19 @@ async function requestJson<T>(
       ...init?.headers,
     },
   });
-  const payload = (await response.json()) as {
+  const payload = (await response.json().catch(() => ({}))) as {
     error?: { code: string; message: string; requestId?: string };
   };
   if (!response.ok) {
+    const fallbackMessage =
+      response.status === 429
+        ? "Muitas solicitações. Aguarde antes de tentar novamente."
+        : response.status >= 500
+          ? "A demonstração está temporariamente indisponível."
+          : "Não foi possível concluir a solicitação.";
     throw new DemoApiError(
       payload.error?.code ?? "REQUEST_FAILED",
-      payload.error?.message ?? "Não foi possível concluir a solicitação.",
+      payload.error?.message ?? fallbackMessage,
       response.status,
       payload.error?.requestId,
     );

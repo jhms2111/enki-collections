@@ -6,5 +6,10 @@ export default async function DemoPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <DemoExperience slug={slug} />;
+  return (
+    <DemoExperience
+      slug={slug}
+      version={process.env.DEMO_VERSION ?? "local"}
+    />
+  );
 }
