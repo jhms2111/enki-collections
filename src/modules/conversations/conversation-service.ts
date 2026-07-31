@@ -104,6 +104,10 @@ export class ConversationService {
         404,
       );
     }
+    const challenge = await this.debtProvider.getIdentityChallenge(
+      organization,
+      identification.identificationRef,
+    );
 
     const now = this.now();
     const updated = await this.store.recordIdentification({
@@ -122,6 +126,68 @@ export class ConversationService {
     return {
       conversation: toPublicConversationDto(updated),
       verificationRequired: true as const,
+      challenge: this.presentPublicChallenge(
+        challenge,
+        this.maxIdentityAttempts,
+      ),
+    };
+  }
+
+  async getPublicIdentityChallenge(
+    publicReference: string,
+    token: string | undefined,
+    requestId: string,
+  ) {
+    const conversation = await this.authenticate(publicReference, token);
+    if (
+      conversation.identityStatus === "VERIFIED" ||
+      conversation.state === "IDENTITY_VERIFIED" ||
+      conversation.state === "OFFER_ACCEPTED"
+    ) {
+      return {
+        status: "VERIFIED" as const,
+        challenge: null,
+        attemptsRemaining: 0,
+      };
+    }
+    if (
+      conversation.identityStatus === "BLOCKED" ||
+      conversation.state === "IDENTITY_BLOCKED"
+    ) {
+      return {
+        status: "BLOCKED" as const,
+        challenge: null,
+        attemptsRemaining: 0,
+      };
+    }
+    if (
+      conversation.identityStatus !== "PENDING" ||
+      !conversation.debtorRef
+    ) {
+      return {
+        status: "NOT_STARTED" as const,
+        challenge: null,
+        attemptsRemaining: this.maxIdentityAttempts,
+      };
+    }
+    const challenge = await this.debtProvider.getIdentityChallenge(
+      this.organizationContext(conversation, requestId),
+      conversation.debtorRef,
+    );
+    return {
+      status: "PENDING" as const,
+      challenge: this.presentPublicChallenge(
+        challenge,
+        Math.max(
+          this.maxIdentityAttempts -
+            conversation.failedIdentityAttempts,
+          0,
+        ),
+      ),
+      attemptsRemaining: Math.max(
+        this.maxIdentityAttempts - conversation.failedIdentityAttempts,
+        0,
+      ),
     };
   }
 
@@ -362,6 +428,22 @@ export class ConversationService {
     return {
       organizationId: conversation.organizationId,
       requestId,
+    };
+  }
+
+  private presentPublicChallenge(
+    challenge: Awaited<
+      ReturnType<DebtProvider["getIdentityChallenge"]>
+    >,
+    attemptsRemaining: number,
+  ) {
+    return {
+      prompt: challenge.prompt,
+      options: challenge.options.map(({ optionRef, label }) => ({
+        optionRef,
+        label,
+      })),
+      attemptsRemaining,
     };
   }
 }

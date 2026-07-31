@@ -29,3 +29,21 @@ export const identityVerificationSchema = z.object({
     .max(80)
     .regex(/^[a-z0-9-]+$/),
 });
+
+export const publicIdentityChallengeSchema = z.object({
+  prompt: z.string().min(1).max(500),
+  options: z
+    .array(
+      z.object({
+        optionRef: z
+          .string()
+          .min(3)
+          .max(80)
+          .regex(/^[a-z0-9-]+$/),
+        label: z.string().min(1).max(160),
+      }).strict(),
+    )
+    .min(2)
+    .max(10),
+  attemptsRemaining: z.number().int().min(0).max(10),
+}).strict();

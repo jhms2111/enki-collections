@@ -6,6 +6,7 @@ import {
   demoIdentifierSchema,
   identityVerificationSchema,
   organizationSlugSchema,
+  publicIdentityChallengeSchema,
 } from "@/modules/conversations/conversation.schemas";
 import type {
   AuditInput,
@@ -280,17 +281,119 @@ describe("ConversationService", () => {
     ).rejects.toMatchObject({ code: "SESSION_INVALID" });
   });
 
-  it("identifies only a fictional identifier without exposing challenge or debt", async () => {
+  it("identifies a fictional identifier and exposes only the public challenge", async () => {
     const { store, identified } = await createAndIdentify();
     const serialized = JSON.stringify(identified);
 
     expect(identified.verificationRequired).toBe(true);
     expect(identified.conversation.identityStatus).toBe("PENDING");
-    expect(serialized).not.toContain("challenge");
+    expect(
+      publicIdentityChallengeSchema.parse(identified.challenge),
+    ).toEqual(identified.challenge);
+    expect(identified.challenge.prompt).toBeTruthy();
+    expect(identified.challenge.options).toHaveLength(3);
+    expect(identified.challenge.attemptsRemaining).toBe(3);
+    expect(serialized).not.toContain("challengeRef");
     expect(serialized).not.toContain("correctOptionRef");
     expect(serialized).not.toContain("debt-");
     expect(serialized).not.toContain("amountInCents");
     expect(store.audits.at(-1)?.eventType).toBe("DEMO_DEBTOR_IDENTIFIED");
+  });
+
+  it("recovers the same public challenge after reload without changing attempts", async () => {
+    const { service, created, identified } = await createAndIdentify();
+    const recovered = await service.getPublicIdentityChallenge(
+      created.conversation.id,
+      created.token,
+      "request-reload",
+    );
+    expect(recovered).toEqual({
+      status: "PENDING",
+      challenge: identified.challenge,
+      attemptsRemaining: 3,
+    });
+    expect(recovered.challenge).not.toHaveProperty("challengeRef");
+    expect(JSON.stringify(recovered)).not.toContain("correctOptionRef");
+  });
+
+  it("returns remaining attempts and safe terminal challenge states", async () => {
+    const failed = await createAndIdentify();
+    await failed.service.verifyIdentity(
+      failed.created.conversation.id,
+      failed.created.token,
+      "option-blue",
+      "request-failed-once",
+    );
+    const pending = await failed.service.getPublicIdentityChallenge(
+      failed.created.conversation.id,
+      failed.created.token,
+      "request-after-failure",
+    );
+    expect(pending.status).toBe("PENDING");
+    expect(pending.attemptsRemaining).toBe(2);
+    expect(pending.challenge?.attemptsRemaining).toBe(2);
+
+    await failed.service.verifyIdentity(
+      failed.created.conversation.id,
+      failed.created.token,
+      "option-blue",
+      "request-failed-twice",
+    );
+    await failed.service.verifyIdentity(
+      failed.created.conversation.id,
+      failed.created.token,
+      "option-blue",
+      "request-failed-third",
+    );
+    expect(
+      await failed.service.getPublicIdentityChallenge(
+        failed.created.conversation.id,
+        failed.created.token,
+        "request-blocked",
+      ),
+    ).toEqual({
+      status: "BLOCKED",
+      challenge: null,
+      attemptsRemaining: 0,
+    });
+
+    const verified = await createAndIdentify();
+    await verified.service.verifyIdentity(
+      verified.created.conversation.id,
+      verified.created.token,
+      "option-green",
+      "request-verified",
+    );
+    expect(
+      await verified.service.getPublicIdentityChallenge(
+        verified.created.conversation.id,
+        verified.created.token,
+        "request-after-verified",
+      ),
+    ).toEqual({
+      status: "VERIFIED",
+      challenge: null,
+      attemptsRemaining: 0,
+    });
+  });
+
+  it("does not expose another conversation challenge with the wrong cookie", async () => {
+    const { service } = setup();
+    const first = await service.create("jf-demo");
+    const second = await service.create("jf-demo");
+    await service.identify(
+      second.conversation.id,
+      second.token,
+      "DEMO-AURORA-001",
+      "request-second-identify",
+    );
+    await expect(
+      service.getPublicIdentityChallenge(
+        second.conversation.id,
+        first.token,
+        "request-cross-session",
+      ),
+    ).rejects.toMatchObject({ code: "SESSION_INVALID" });
   });
 
   it("blocks the session after three consecutive failures", async () => {
@@ -527,6 +630,20 @@ describe("conversation input schemas", () => {
     expect(() => organizationSlugSchema.parse("../jf-demo")).toThrow();
     expect(() =>
       identityVerificationSchema.parse({ optionRef: "<script>" }),
+    ).toThrow();
+  });
+
+  it("rejects internal or extra fields in a public challenge", () => {
+    expect(() =>
+      publicIdentityChallengeSchema.parse({
+        prompt: "Pergunta",
+        options: [
+          { optionRef: "option-a", label: "A" },
+          { optionRef: "option-b", label: "B" },
+        ],
+        attemptsRemaining: 3,
+        correctOptionRef: "option-a",
+      }),
     ).toThrow();
   });
 });

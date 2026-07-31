@@ -68,6 +68,7 @@ export function presentAuthorizedOffers(
       offerRef: offer.offerRef,
       providerVersion: offer.providerVersion,
       debtRef: offer.debtRef,
+      terms: offer.terms,
       kind: offer.terms.kind,
       total: presentMoney(offer.terms.total),
       downPayment: presentMoney(offer.terms.downPayment),
