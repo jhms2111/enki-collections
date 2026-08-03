@@ -144,3 +144,19 @@ Banco:
 Interromper antes do deploy se a Vercel ou o Supabase solicitar cartão,
 upgrade, add-on, excedente pago ou alteração de plano. Antes de piloto real ou
 contrato, reavaliar custos, disponibilidade, backups, proteção e termos de uso.
+
+## Publicação da Fase 2
+
+- Data da publicação: 4 de agosto de 2026.
+- Ambiente: Vercel Hobby, Production.
+- URL pública: `https://enki-collections.vercel.app`.
+- Deployment validado: `dpl_DSubRXRKESfnKY9UJjAhSjX1Ad6h`.
+- Supabase: projeto Free existente, sem alteração de plano.
+- WAF: uma regra por IP para `/api/v1/*`, com 60 requisições em 10 minutos.
+- Custo obrigatório confirmado durante a publicação: US$ 0.
+- Smoke tests HTTP e fluxo autenticado completo: aprovados.
+
+O deployment usa exclusivamente fixtures fictícias e instrumentos demonstrativos
+sem valor financeiro. A publicação não estabelece disponibilidade, piloto real ou
+uso contratual. Nenhum segredo, hash, URL de banco ou código de acesso é registrado
+neste documento.
