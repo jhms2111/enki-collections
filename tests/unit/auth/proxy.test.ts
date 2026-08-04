@@ -93,4 +93,41 @@ describe("production proxy foundation", () => {
     );
     expect(valid.headers.get("x-middleware-next")).toBe("1");
   });
+
+  it("separa a área interna dos cookies da demonstração", async () => {
+    const withoutInternalSession = await proxy(
+      new NextRequest("http://localhost:3000/internal"),
+    );
+    expect(withoutInternalSession.status).toBe(307);
+    expect(withoutInternalSession.headers.get("location")).toContain(
+      "/internal-access",
+    );
+
+    const demoCookie = encodeDemoAccessState(
+      {
+        authorized: true,
+        failedAttempts: 0,
+        windowStartedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      },
+      secret,
+    );
+    const demoIsNotInternal = await proxy(
+      new NextRequest("http://localhost:3000/api/v1/internal/scenarios", {
+        headers: { Cookie: `enki_demo_access=${demoCookie}` },
+      }),
+    );
+    expect(demoIsNotInternal.status).toBe(401);
+
+    const internalCookieContinuesToServerValidation = await proxy(
+      new NextRequest("http://localhost:3000/internal", {
+        headers: { Cookie: "enki_internal_session=opaque-test-token" },
+      }),
+    );
+    expect(
+      internalCookieContinuesToServerValidation.headers.get(
+        "x-middleware-next",
+      ),
+    ).toBe("1");
+  });
 });

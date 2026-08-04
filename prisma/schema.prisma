@@ -54,23 +54,41 @@ enum AuditActor {
   HUMAN_AGENT
 }
 
+enum SandboxRecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum InternalRole {
+  SANDBOX_EDITOR
+}
+
 model Organization {
-  id            String             @id @default(cuid())
-  slug          String             @unique @db.VarChar(80)
-  externalRef   String             @unique @db.VarChar(160)
-  name          String             @db.VarChar(160)
-  status        OrganizationStatus @default(ACTIVE)
-  timeZone      String             @default("UTC") @db.VarChar(64)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  conversations Conversation[]
-  messages      Message[]
-  auditEvents   AuditEvent[]
-  idempotency   IdempotencyRecord[]
-  offerAcceptances OfferAcceptance[]
-  paymentPromises PaymentPromise[]
-  paymentReports PaymentReport[]
-  disputes      Dispute[]
+  id                              String                           @id @default(cuid())
+  slug                            String                           @unique @db.VarChar(80)
+  externalRef                     String                           @unique @db.VarChar(160)
+  name                            String                           @db.VarChar(160)
+  status                          OrganizationStatus               @default(ACTIVE)
+  timeZone                        String                           @default("UTC") @db.VarChar(64)
+  createdAt                       DateTime                         @default(now())
+  updatedAt                       DateTime                         @updatedAt
+  conversations                   Conversation[]
+  messages                        Message[]
+  auditEvents                     AuditEvent[]
+  idempotency                     IdempotencyRecord[]
+  offerAcceptances                OfferAcceptance[]
+  paymentPromises                 PaymentPromise[]
+  paymentReports                  PaymentReport[]
+  disputes                        Dispute[]
+  internalSessions                InternalSession[]
+  internalAuditEvents             InternalAuditEvent[]
+  sandboxCreditors                SandboxCreditor[]
+  sandboxIdentityProfiles         SandboxIdentityProfile[]
+  sandboxIdentityChallenges       SandboxIdentityChallenge[]
+  sandboxIdentityChallengeOptions SandboxIdentityChallengeOption[]
+  sandboxDebtors                  SandboxDebtor[]
+  sandboxDebts                    SandboxDebt[]
+  sandboxAuthorizedOffers         SandboxAuthorizedOffer[]
 }
 
 model Conversation {
@@ -173,20 +191,20 @@ model OfferAcceptance {
 }
 
 model PaymentPromise {
-  id                    String       @id @default(cuid())
-  organizationId        String
-  conversationId        String
-  publicReference       String       @unique @db.VarChar(80)
-  debtRef               String       @db.VarChar(160)
-  offerRef              String?      @db.VarChar(160)
-  providerReference     String       @db.VarChar(160)
-  promisedDate          DateTime     @db.Date
-  timeZone              String       @db.VarChar(64)
-  status                String       @db.VarChar(40)
-  idempotencyKeyHash    String       @db.Char(64)
-  createdAt             DateTime     @default(now())
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  organizationId     String
+  conversationId     String
+  publicReference    String       @unique @db.VarChar(80)
+  debtRef            String       @db.VarChar(160)
+  offerRef           String?      @db.VarChar(160)
+  providerReference  String       @db.VarChar(160)
+  promisedDate       DateTime     @db.Date
+  timeZone           String       @db.VarChar(64)
+  status             String       @db.VarChar(40)
+  idempotencyKeyHash String       @db.Char(64)
+  createdAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation       Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
 
   @@unique([organizationId, providerReference])
   @@unique([organizationId, conversationId, debtRef, idempotencyKeyHash])
@@ -194,19 +212,19 @@ model PaymentPromise {
 }
 
 model PaymentReport {
-  id                    String       @id @default(cuid())
-  organizationId        String
-  conversationId        String
-  publicReference       String       @unique @db.VarChar(80)
-  debtRef               String       @db.VarChar(160)
-  providerReference     String       @db.VarChar(160)
-  reportedAt            DateTime
-  receivedAt            DateTime
-  status                String       @db.VarChar(40)
-  idempotencyKeyHash    String       @db.Char(64)
-  createdAt             DateTime     @default(now())
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  organizationId     String
+  conversationId     String
+  publicReference    String       @unique @db.VarChar(80)
+  debtRef            String       @db.VarChar(160)
+  providerReference  String       @db.VarChar(160)
+  reportedAt         DateTime
+  receivedAt         DateTime
+  status             String       @db.VarChar(40)
+  idempotencyKeyHash String       @db.Char(64)
+  createdAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation       Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
 
   @@unique([organizationId, providerReference])
   @@unique([organizationId, conversationId, debtRef, idempotencyKeyHash])
@@ -214,21 +232,203 @@ model PaymentReport {
 }
 
 model Dispute {
-  id                    String       @id @default(cuid())
-  organizationId        String
-  conversationId        String
-  publicReference       String       @unique @db.VarChar(80)
-  debtRef               String       @db.VarChar(160)
-  providerReference     String       @db.VarChar(160)
-  reasonCode            String       @db.VarChar(40)
-  description           String?      @db.VarChar(300)
-  status                String       @db.VarChar(40)
-  idempotencyKeyHash    String       @db.Char(64)
-  createdAt             DateTime     @default(now())
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  conversation          Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  id                 String       @id @default(cuid())
+  organizationId     String
+  conversationId     String
+  publicReference    String       @unique @db.VarChar(80)
+  debtRef            String       @db.VarChar(160)
+  providerReference  String       @db.VarChar(160)
+  reasonCode         String       @db.VarChar(40)
+  description        String?      @db.VarChar(300)
+  status             String       @db.VarChar(40)
+  idempotencyKeyHash String       @db.Char(64)
+  createdAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  conversation       Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
 
   @@unique([organizationId, providerReference])
   @@unique([organizationId, conversationId, debtRef, idempotencyKeyHash])
   @@index([organizationId, conversationId, createdAt])
+}
+
+model InternalSession {
+  id             String               @id @default(cuid())
+  organizationId String
+  tokenHash      String               @unique @db.Char(64)
+  role           InternalRole         @default(SANDBOX_EDITOR)
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastActivityAt DateTime             @default(now())
+  createdAt      DateTime             @default(now())
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  auditEvents    InternalAuditEvent[]
+
+  @@index([organizationId, expiresAt])
+}
+
+model InternalAuditEvent {
+  id                String           @id @default(cuid())
+  organizationId    String
+  internalSessionId String?
+  eventType         String           @db.VarChar(100)
+  entityType        String?          @db.VarChar(80)
+  entityRef         String?          @db.VarChar(160)
+  metadata          Json
+  occurredAt        DateTime         @default(now())
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  internalSession   InternalSession? @relation(fields: [internalSessionId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, occurredAt])
+}
+
+model SandboxCreditor {
+  id             String              @id @default(cuid())
+  organizationId String
+  creditorRef    String              @db.VarChar(160)
+  displayName    String              @db.VarChar(100)
+  status         SandboxRecordStatus @default(ACTIVE)
+  isDemo         Boolean             @default(true)
+  version        Int                 @default(1)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  debtors        SandboxDebtor[]
+  debts          SandboxDebt[]
+
+  @@unique([organizationId, creditorRef])
+  @@unique([id, organizationId])
+  @@index([organizationId, status])
+}
+
+model SandboxIdentityProfile {
+  id                String                    @id @default(cuid())
+  organizationId    String
+  profileRef        String                    @db.VarChar(160)
+  demoIdentifier    String                    @db.VarChar(48)
+  maskedDisplayName String                    @db.VarChar(80)
+  status            SandboxRecordStatus       @default(ACTIVE)
+  isDemo            Boolean                   @default(true)
+  version           Int                       @default(1)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  challenge         SandboxIdentityChallenge?
+  debtors           SandboxDebtor[]
+
+  @@unique([organizationId, profileRef])
+  @@unique([organizationId, demoIdentifier])
+  @@unique([id, organizationId])
+  @@index([organizationId, status])
+}
+
+model SandboxIdentityChallenge {
+  id                String                           @id @default(cuid())
+  organizationId    String
+  identityProfileId String                           @unique
+  challengeRef      String                           @db.VarChar(160)
+  prompt            String                           @db.VarChar(200)
+  maxAttempts       Int                              @default(3)
+  status            SandboxRecordStatus              @default(ACTIVE)
+  isDemo            Boolean                          @default(true)
+  version           Int                              @default(1)
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
+  organization      Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  identityProfile   SandboxIdentityProfile           @relation(fields: [identityProfileId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  options           SandboxIdentityChallengeOption[]
+
+  @@unique([organizationId, challengeRef])
+  @@unique([identityProfileId, organizationId])
+  @@unique([id, organizationId])
+  @@index([organizationId, status])
+}
+
+model SandboxIdentityChallengeOption {
+  id             String                   @id @default(cuid())
+  organizationId String
+  challengeId    String
+  optionRef      String                   @db.VarChar(160)
+  label          String                   @db.VarChar(60)
+  isCorrect      Boolean
+  position       Int
+  isDemo         Boolean                  @default(true)
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  challenge      SandboxIdentityChallenge @relation(fields: [challengeId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, challengeId, optionRef])
+  @@unique([challengeId, position])
+  @@index([organizationId, challengeId])
+}
+
+model SandboxDebtor {
+  id                String                 @id @default(cuid())
+  organizationId    String
+  creditorId        String
+  identityProfileId String
+  debtorRef         String                 @db.VarChar(160)
+  status            SandboxRecordStatus    @default(ACTIVE)
+  isDemo            Boolean                @default(true)
+  version           Int                    @default(1)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creditor          SandboxCreditor        @relation(fields: [creditorId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  identityProfile   SandboxIdentityProfile @relation(fields: [identityProfileId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  debts             SandboxDebt[]
+
+  @@unique([organizationId, debtorRef])
+  @@unique([organizationId, creditorId, identityProfileId])
+  @@unique([id, organizationId])
+  @@index([organizationId, status])
+}
+
+model SandboxDebt {
+  id             String                   @id @default(cuid())
+  organizationId String
+  creditorId     String
+  debtorId       String
+  debtRef        String                   @db.VarChar(160)
+  description    String                   @db.VarChar(160)
+  amountInCents  Int
+  currency       String                   @default("BRL") @db.Char(3)
+  dueDate        DateTime                 @db.Date
+  status         String                   @default("OPEN") @db.VarChar(24)
+  recordStatus   SandboxRecordStatus      @default(ACTIVE)
+  isDemo         Boolean                  @default(true)
+  version        Int                      @default(1)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creditor       SandboxCreditor          @relation(fields: [creditorId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  debtor         SandboxDebtor            @relation(fields: [debtorId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  offers         SandboxAuthorizedOffer[]
+
+  @@unique([organizationId, debtRef])
+  @@unique([id, organizationId])
+  @@index([organizationId, debtorId, recordStatus])
+}
+
+model SandboxAuthorizedOffer {
+  id                       String              @id @default(cuid())
+  organizationId           String
+  debtId                   String
+  offerRef                 String              @db.VarChar(160)
+  kind                     String              @db.VarChar(24)
+  totalAmountInCents       Int
+  downPaymentAmountInCents Int
+  installmentCount         Int
+  installmentAmountInCents Int
+  firstDueDate             DateTime            @db.Date
+  expiresAt                DateTime
+  status                   String              @default("AVAILABLE") @db.VarChar(24)
+  recordStatus             SandboxRecordStatus @default(ACTIVE)
+  isDemo                   Boolean             @default(true)
+  version                  Int                 @default(1)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  organization             Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  debt                     SandboxDebt         @relation(fields: [debtId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([organizationId, offerRef])
+  @@index([organizationId, debtId, recordStatus])
 }

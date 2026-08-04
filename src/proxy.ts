@@ -5,9 +5,12 @@ import {
   demoAccessCookieName,
   getDemoAccessEnv,
 } from "@/shared/auth/demo-access";
+import { internalSessionCookieName } from "@/shared/auth/internal-access";
 
 const accessPage = "/demo-access";
 const accessApi = "/api/v1/demo-access/authenticate";
+const internalAccessPage = "/internal-access";
+const internalAccessApi = "/api/v1/internal/authenticate";
 const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function securityFailure(code: string, status: number) {
@@ -34,6 +37,14 @@ export async function proxy(request: NextRequest) {
   if (originFailure) return originFailure;
 
   const pathname = request.nextUrl.pathname;
+  if (pathname === internalAccessPage || pathname === internalAccessApi) {
+    return NextResponse.next();
+  }
+  if (pathname.startsWith("/internal") || pathname.startsWith("/api/v1/internal/")) {
+    if (request.cookies.has(internalSessionCookieName)) return NextResponse.next();
+    if (pathname.startsWith("/api/")) return securityFailure("INTERNAL_SESSION_REQUIRED", 401);
+    return NextResponse.redirect(new URL(internalAccessPage, request.url));
+  }
   if (pathname === accessPage || pathname === accessApi) {
     return NextResponse.next();
   }
@@ -68,5 +79,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/demo/:path*", "/api/v1/:path*"],
+  matcher: ["/demo/:path*", "/internal/:path*", "/api/v1/:path*"],
 };

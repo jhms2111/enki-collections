@@ -115,6 +115,19 @@ footer strong { color: var(--ink); }
 .access-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.6; }
 .access-brand { margin-bottom: 42px; }
 .access-note { display: block; margin-top: 22px; color: var(--muted); line-height: 1.5; }
+.internal-page { min-height: 100vh; background: var(--cream); }
+.internal-header { width: min(1280px, calc(100% - 40px)); margin: 0 auto; padding: 38px 0 24px; display: flex; justify-content: space-between; align-items: center; }
+.internal-header h1 { margin: 0; font-family: Georgia, serif; font-size: 42px; font-weight: 500; }
+.internal-layout { width: min(1280px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, .8fr); gap: 24px; align-items: start; }
+.internal-form, .scenario-list { width: auto; margin: 0 0 50px; }
+.internal-form fieldset { border-top: 1px solid var(--line); padding-top: 22px; margin-top: 24px; }
+.internal-form legend { font-family: Georgia, serif; font-size: 23px; }
+.inline-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.offer-editor, .scenario-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 10px 0; background: white; }
+.scenario-card h3 { margin: 10px 0 5px; }
+.status-active, .status-inactive { display: inline-block; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 800; }
+.status-active { background: var(--mint); color: var(--brand-dark); }
+.status-inactive { background: #eee; color: #555; }
 
 @media (max-width: 800px) {
   .demo-header, .hero, .stepper, .panel, .negotiation, .section-heading, .creditor-grid, .alert, .loading, .receipt, footer { width: min(100% - 24px, 1160px); }
@@ -132,6 +145,8 @@ footer strong { color: var(--ink); }
   .panel { padding: 24px 18px; }
   .receipt { bottom: 8px; }
   .access-card { margin-top: 5vh; padding: 28px 20px; }
+  .internal-header { align-items: stretch; flex-direction: column; gap: 18px; }
+  .internal-layout { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
