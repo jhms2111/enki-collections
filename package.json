@@ -16,7 +16,8 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "db:migrate": "prisma migrate deploy",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "internal:provision": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/provision-internal-access.ps1"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.9.1",
