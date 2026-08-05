@@ -12,6 +12,7 @@ const accessApi = "/api/v1/demo-access/authenticate";
 const internalAccessPage = "/internal-access";
 const internalAccessApi = "/api/v1/internal/authenticate";
 const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const internalHtmlCacheControl = "private, no-store, max-age=0";
 
 function securityFailure(code: string, status: number) {
   return NextResponse.json(
@@ -39,17 +40,19 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (pathname === internalAccessPage || pathname === internalAccessApi) {
     const response = NextResponse.next();
-    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("Cache-Control", internalHtmlCacheControl);
     return response;
   }
   if (pathname.startsWith("/internal") || pathname.startsWith("/api/v1/internal/")) {
     if (request.cookies.has(internalSessionCookieName)) {
       const response = NextResponse.next();
-      response.headers.set("Cache-Control", "private, no-store");
+      response.headers.set("Cache-Control", internalHtmlCacheControl);
       return response;
     }
     if (pathname.startsWith("/api/")) return securityFailure("INTERNAL_SESSION_REQUIRED", 401);
-    return NextResponse.redirect(new URL(internalAccessPage, request.url));
+    const response = NextResponse.redirect(new URL(internalAccessPage, request.url));
+    response.headers.set("Cache-Control", internalHtmlCacheControl);
+    return response;
   }
   if (pathname === accessPage || pathname === accessApi) {
     return NextResponse.next();

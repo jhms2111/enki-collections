@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
   async headers() {
+    const internalHtmlCacheControl = [
+      { key: "Cache-Control", value: "private, no-store, max-age=0" },
+    ];
     const securityHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Frame-Options", value: "DENY" },
@@ -44,6 +47,14 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/:path*",
         headers: [{ key: "Cache-Control", value: "no-store, max-age=0" }],
+      },
+      {
+        source: "/internal-access",
+        headers: internalHtmlCacheControl,
+      },
+      {
+        source: "/internal/:path*",
+        headers: internalHtmlCacheControl,
       },
     ];
   },

@@ -129,6 +129,16 @@ describe("production proxy foundation", () => {
         "x-middleware-next",
       ),
     ).toBe("1");
-    expect(internalCookieContinuesToServerValidation.headers.get("cache-control")).toBe("private, no-store");
+    expect(internalCookieContinuesToServerValidation.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  });
+
+  it("aplica cache privado à página de acesso e ao redirecionamento interno", async () => {
+    const access = await proxy(new NextRequest("http://localhost:3000/internal-access"));
+    expect(access.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+
+    const redirect = await proxy(new NextRequest("http://localhost:3000/internal/settings"));
+    expect(redirect.status).toBe(307);
+    expect(redirect.headers.get("location")).toContain("/internal-access");
+    expect(redirect.headers.get("cache-control")).toBe("private, no-store, max-age=0");
   });
 });
