@@ -12,6 +12,7 @@ import {
   getConversation,
   getDebt,
   identify,
+  interpretConversationTurn,
   listDebts,
   listOffers,
   openDispute,
@@ -260,19 +261,42 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
     });
   }
 
-  function submitText(event: React.FormEvent<HTMLFormElement>) {
+  async function submitText(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const field = new FormData(form).get("chatText");
     const text = String(field ?? "");
     if (!text.trim()) return;
     user(text);
-    const intent = interpretSafeChatText(text);
-    bot(intent === "HELP" ? "Use os botões para avançar com segurança. Texto livre nunca confirma uma operação."
-      : intent === "LIST_DEBTS" && conversation?.identityStatus === "VERIFIED" ? "As dívidas disponíveis estão nos botões abaixo."
-        : intent === "LIST_OFFERS" && debt ? "As propostas autorizadas estão nos botões abaixo."
-          : "Não entendi com segurança. Escolha uma das opções exibidas; nenhuma ação foi executada.");
     form.reset();
+    if (!conversation) return;
+    setBusy(true);
+    try {
+      const uiContext = conversation.identityStatus !== "VERIFIED"
+        ? "IDENTITY"
+        : !debt
+          ? "DEBT_LIST"
+          : acceptanceId
+            ? "ACCEPTED"
+            : offer
+              ? "OFFER_REVIEW"
+              : "DEBT_DETAIL";
+      const result = await interpretConversationTurn({
+        conversationId: conversation.id,
+        message: text,
+        clientTurnId: crypto.randomUUID(),
+        uiContext,
+      });
+      bot(result.turn.message);
+    } catch {
+      const intent = interpretSafeChatText(text);
+      bot(intent === "HELP" ? "Use os botões para avançar com segurança. Texto livre nunca confirma uma operação."
+        : intent === "LIST_DEBTS" && conversation.identityStatus === "VERIFIED" ? "As dívidas disponíveis estão nos botões abaixo."
+          : intent === "LIST_OFFERS" && debt ? "As propostas autorizadas estão nos botões abaixo."
+            : "Não entendi com segurança. Escolha uma das opções exibidas; nenhuma ação foi executada.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

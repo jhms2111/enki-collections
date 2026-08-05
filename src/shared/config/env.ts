@@ -16,6 +16,21 @@ const runtimeEnvSchema = z.object({
     .max(86_400)
     .default(3_600),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  OPENAI_ENABLED: z
+    .preprocess((value) => value === "" ? undefined : value, z.enum(["true", "false"]).default("false"))
+    .transform((value) => value === "true"),
+  OPENAI_MODEL: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().trim().min(1).max(80).default("gpt-5.6-luna"),
+  ),
+  OPENAI_TIMEOUT_MS: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(500).max(10_000).default(3_000),
+  ),
+  OPENAI_MAX_OUTPUT_TOKENS: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(64).max(1_000).default(300),
+  ),
 }).refine(
   (env) =>
     env.IDEMPOTENCY_HMAC_SECRET !== env.CONVERSATION_SESSION_SECRET,

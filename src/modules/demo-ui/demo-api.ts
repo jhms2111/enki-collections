@@ -114,6 +114,33 @@ export function optOutConversation(conversationId: string) {
   );
 }
 
+export function interpretConversationTurn(input: {
+  conversationId: string;
+  message: string;
+  clientTurnId: string;
+  uiContext: "IDENTITY" | "DEBT_LIST" | "DEBT_DETAIL" | "OFFER_REVIEW" | "ACCEPTED";
+}) {
+  return requestJson<{
+    turn: {
+      intent: string;
+      message: string;
+      suggestedActions: readonly string[];
+      requiresConfirmation: boolean;
+      fallbackUsed: boolean;
+    };
+  }>(
+    `/api/v1/public/conversations/${encodeURIComponent(input.conversationId)}/interpret`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        message: input.message,
+        clientTurnId: input.clientTurnId,
+        uiContext: input.uiContext,
+      }),
+    },
+  );
+}
+
 export function createConversation(slug: string) {
   return requestJson<{ conversation: Conversation }>(
     `/api/v1/public/organizations/${encodeURIComponent(slug)}/conversations`,

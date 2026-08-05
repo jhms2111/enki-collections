@@ -17,6 +17,8 @@ describe("getRuntimeEnv", () => {
 
     expect(env.IDENTITY_MAX_ATTEMPTS).toBe(3);
     expect(env.CHAT_MAX_MESSAGE_LENGTH).toBe(1_200);
+    expect(env.OPENAI_ENABLED).toBe(false);
+    expect(env.OPENAI_MODEL).toBe("gpt-5.6-luna");
   });
 
   it("rejects a short session secret", () => {

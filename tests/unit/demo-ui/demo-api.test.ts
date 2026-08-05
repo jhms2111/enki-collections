@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   acceptOffer,
   closeConversation,
+  interpretConversationTurn,
   optOutConversation,
   registerPromise,
   type Offer,
@@ -11,6 +12,31 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("demo api client", () => {
+  it("sends only bounded conversational context for interpretation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ turn: { intent: "HELP", message: "Ajuda", suggestedActions: [], requiresConfirmation: false, fallbackUsed: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await interpretConversationTurn({
+      conversationId: "conv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      message: "ajuda",
+      clientTurnId: "00000000-0000-4000-8000-000000000012",
+      uiContext: "IDENTITY",
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body).toEqual({
+      message: "ajuda",
+      clientTurnId: "00000000-0000-4000-8000-000000000012",
+      uiContext: "IDENTITY",
+    });
+    expect(body).not.toHaveProperty("organizationId");
+    expect(body).not.toHaveProperty("amount");
+    expect(body).not.toHaveProperty("offerRef");
+  });
+
   it("uses strict explicit confirmation for terminal commands", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ conversation: { state: "CLOSED" } }), {

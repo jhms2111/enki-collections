@@ -8,6 +8,9 @@ import { OccurrenceService } from "./occurrence-service";
 import { PrismaAcceptanceStore } from "./prisma-acceptance-store";
 import { PrismaConversationStore } from "./prisma-conversation-store";
 import { PrismaOccurrenceStore } from "./prisma-occurrence-store";
+import { ClosedAiUsageBudgetGate, ConversationTurnOrchestrator } from "@/modules/webchat/conversation-turn-orchestrator";
+import { ConversationTurnService } from "@/modules/webchat/conversation-turn-service";
+import { UnavailableNaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
 
 export function getConversationService(): ConversationService {
   const env = getRuntimeEnv();
@@ -43,6 +46,20 @@ export function getOfferAcceptanceService(): OfferAcceptanceService {
     new SandboxDebtProvider(client),
     env.CONVERSATION_SESSION_SECRET,
     env.IDEMPOTENCY_HMAC_SECRET,
+    env.SESSION_COOKIE_MAX_AGE_SECONDS,
+  );
+}
+
+export function getConversationTurnService(): ConversationTurnService {
+  const env = getRuntimeEnv();
+  return new ConversationTurnService(
+    new PrismaConversationStore(getPrisma()),
+    new ConversationTurnOrchestrator(
+      new UnavailableNaturalLanguageIntentClient(),
+      new ClosedAiUsageBudgetGate(),
+      { enabled: env.OPENAI_ENABLED, model: env.OPENAI_MODEL },
+    ),
+    env.CONVERSATION_SESSION_SECRET,
     env.SESSION_COOKIE_MAX_AGE_SECONDS,
   );
 }
