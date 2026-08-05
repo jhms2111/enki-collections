@@ -27,6 +27,7 @@ import type {
   PaymentStatus,
   VerifiedDebtorContext,
 } from "../debt-provider.types";
+import { isDemoIdentifier } from "@/shared/demo/demo-identifier";
 import {
   mockOrganizations,
   type MockDebtorFixture,
@@ -92,7 +93,7 @@ export class MockDebtProvider implements DebtProvider {
 
     if (
       identifier.type !== "DEMO_ID" ||
-      !/^DEMO-[A-Z]+-\d{3}$/.test(identifier.value)
+      !isDemoIdentifier(identifier.value)
     ) {
       return null;
     }

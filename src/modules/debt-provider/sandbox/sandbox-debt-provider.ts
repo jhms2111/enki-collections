@@ -5,6 +5,7 @@ import type { OrganizationContext } from "@/modules/organizations/organization-c
 import { assertOrganizationContext } from "@/modules/organizations/organization-context";
 import { ApplicationError } from "@/shared/errors/application-error";
 import { assertIdempotencyKey } from "@/shared/idempotency/idempotency";
+import { isDemoIdentifier } from "@/shared/demo/demo-identifier";
 
 import type { DebtProvider } from "../debt-provider";
 import type { AuthorizedOffer, DebtorIdentification, DebtDetails, DebtSummary, DemoDebtorIdentifier, DemoPaymentInstrument, DemoPaymentInstrumentType, DisputeInput, DisputeResult, IdentityChallenge, IdentityVerification, OfferAcceptanceInput, OfferAcceptanceResult, PaymentPromiseInput, PaymentPromiseResult, PaymentReportInput, PaymentReportResult, PaymentStatus, VerifiedDebtorContext } from "../debt-provider.types";
@@ -21,7 +22,7 @@ export class SandboxDebtProvider implements DebtProvider {
 
   async identifyDebtor(organization: OrganizationContext, identifier: DemoDebtorIdentifier): Promise<DebtorIdentification | null> {
     this.assertOrganization(organization);
-    if (identifier.type !== "DEMO_ID" || !/^DEMO-[A-Z0-9][A-Z0-9-]{2,31}$/.test(identifier.value)) return null;
+    if (identifier.type !== "DEMO_ID" || !isDemoIdentifier(identifier.value)) return null;
     const profile = await this.prisma.sandboxIdentityProfile.findUnique({
       where: { organizationId_demoIdentifier: { organizationId: organization.organizationId, demoIdentifier: identifier.value } },
       include: { challenge: true, debtors: { include: { creditor: true } } },

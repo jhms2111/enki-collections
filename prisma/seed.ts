@@ -78,12 +78,16 @@ async function main() {
               demoIdentifier: debtorFixture.demoIdentifier,
             },
           },
-          update: { maskedDisplayName: debtorFixture.maskedDisplayName },
+          update: {
+            maskedDisplayName: debtorFixture.maskedDisplayName,
+            scenarioName: `Cenário ${debtorFixture.maskedDisplayName}`,
+          },
           create: {
             organizationId: organization.organizationId,
             profileRef,
             demoIdentifier: debtorFixture.demoIdentifier,
             maskedDisplayName: debtorFixture.maskedDisplayName,
+            scenarioName: `Cenário ${debtorFixture.maskedDisplayName}`,
             isDemo: true,
           },
         });
@@ -141,12 +145,17 @@ async function main() {
               debtorRef: debtorFixture.debtorRef,
             },
           },
-          update: { creditorId: creditor.id, identityProfileId: profile.id },
+          update: {
+            creditorId: creditor.id,
+            identityProfileId: profile.id,
+            displayName: debtorFixture.maskedDisplayName,
+          },
           create: {
             organizationId: organization.organizationId,
             creditorId: creditor.id,
             identityProfileId: profile.id,
             debtorRef: debtorFixture.debtorRef,
+            displayName: debtorFixture.maskedDisplayName,
             isDemo: true,
           },
         });

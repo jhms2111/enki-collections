@@ -306,6 +306,7 @@ model SandboxIdentityProfile {
   profileRef        String                    @db.VarChar(160)
   demoIdentifier    String                    @db.VarChar(48)
   maskedDisplayName String                    @db.VarChar(80)
+  scenarioName      String                    @default("Cenário demonstrativo") @db.VarChar(100)
   status            SandboxRecordStatus       @default(ACTIVE)
   isDemo            Boolean                   @default(true)
   version           Int                       @default(1)
@@ -366,6 +367,7 @@ model SandboxDebtor {
   creditorId        String
   identityProfileId String
   debtorRef         String                 @db.VarChar(160)
+  displayName       String                 @default("Pessoa demonstrativa") @db.VarChar(80)
   status            SandboxRecordStatus    @default(ACTIVE)
   isDemo            Boolean                @default(true)
   version           Int                    @default(1)

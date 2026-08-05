@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { demoIdentifierPattern } from "@/shared/demo/demo-identifier";
 
 export const organizationSlugSchema = z
   .string()
@@ -17,8 +18,8 @@ export const demoIdentifierSchema = z.object({
   demoIdentifier: z
     .string()
     .trim()
-    .regex(/^DEMO-[A-Z]+-\d{3}$/)
-    .max(40),
+    .regex(demoIdentifierPattern)
+    .max(48),
 });
 
 export const identityVerificationSchema = z.object({

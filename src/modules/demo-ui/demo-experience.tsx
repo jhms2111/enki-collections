@@ -381,7 +381,7 @@ export function DemoExperience({
           <p className="muted">Não informe CPF, telefone, e-mail ou qualquer dado pessoal real.</p>
           <form onSubmit={submitIdentifier} className="form-stack">
             <label htmlFor="demoIdentifier">Identificador demonstrativo</label>
-            <input id="demoIdentifier" value={identifier} onChange={(e) => setIdentifier(e.target.value)} pattern="DEMO-[A-Z]+-[0-9]{3}" required />
+            <input id="demoIdentifier" value={identifier} onChange={(e) => setIdentifier(e.target.value.toUpperCase())} pattern="DEMO-[A-Z0-9]{2,16}-[A-Z0-9]{3,8}" maxLength={48} required />
             <button className="button primary" disabled={busy}>Continuar com dados fictícios</button>
           </form>
         </section>

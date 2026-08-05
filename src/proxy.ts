@@ -38,10 +38,16 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   if (pathname === internalAccessPage || pathname === internalAccessApi) {
-    return NextResponse.next();
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
   }
   if (pathname.startsWith("/internal") || pathname.startsWith("/api/v1/internal/")) {
-    if (request.cookies.has(internalSessionCookieName)) return NextResponse.next();
+    if (request.cookies.has(internalSessionCookieName)) {
+      const response = NextResponse.next();
+      response.headers.set("Cache-Control", "private, no-store");
+      return response;
+    }
     if (pathname.startsWith("/api/")) return securityFailure("INTERNAL_SESSION_REQUIRED", 401);
     return NextResponse.redirect(new URL(internalAccessPage, request.url));
   }

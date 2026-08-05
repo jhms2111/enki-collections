@@ -122,9 +122,15 @@ footer strong { color: var(--ink); }
 .internal-form, .scenario-list { width: auto; margin: 0 0 50px; }
 .internal-form fieldset { border-top: 1px solid var(--line); padding-top: 22px; margin-top: 24px; }
 .internal-form legend { font-family: Georgia, serif; font-size: 23px; }
+.form-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .inline-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .offer-editor, .scenario-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 10px 0; background: white; }
 .scenario-card h3 { margin: 10px 0 5px; }
+.field-error { display: block; margin-top: 6px; color: #a22b20; font-size: 13px; font-weight: 700; }
+.internal-form [aria-invalid="true"] { border-color: #a22b20; }
+.text-button { border: 0; padding: 6px 0; background: transparent; color: var(--brand-dark); font-weight: 800; cursor: pointer; }
+.created-identifier { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid currentColor; }
+.created-identifier code, .demo-id { display: block; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 16px; letter-spacing: .04em; }
 .status-active, .status-inactive { display: inline-block; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 800; }
 .status-active { background: var(--mint); color: var(--brand-dark); }
 .status-inactive { background: #eee; color: #555; }
@@ -141,6 +147,7 @@ footer strong { color: var(--ink); }
   .safe-badge { align-self: flex-start; }
   .debt-value { justify-content: space-between; }
   .offers-grid, .actions-grid { grid-template-columns: 1fr; }
+  .form-title-row { flex-direction: column; }
   .amount-card { min-width: 0; }
   .panel { padding: 24px 18px; }
   .receipt { bottom: 8px; }

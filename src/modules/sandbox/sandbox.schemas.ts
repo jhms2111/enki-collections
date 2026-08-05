@@ -5,12 +5,10 @@ const safeText = (min: number, max: number) =>
   z.string().trim().min(min).max(max).refine((value) => !forbiddenPersonalData.test(value), {
     message: "O campo parece conter dado pessoal real.",
   });
-const ref = z.string().trim().min(3).max(160).regex(/^[a-z0-9][a-z0-9-]*$/i);
-const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const cents = z.number().int().min(1).max(100_000_000);
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Informe uma data válida.");
+const cents = z.number().int("Informe um valor inteiro em centavos.").min(1).max(100_000_000);
 
 export const sandboxOfferInputSchema = z.object({
-  offerRef: ref,
   kind: z.enum(["CASH", "INSTALLMENT"]),
   totalAmountInCents: cents,
   downPaymentAmountInCents: z.number().int().min(0).max(100_000_000),
@@ -18,43 +16,27 @@ export const sandboxOfferInputSchema = z.object({
   installmentAmountInCents: cents,
   firstDueDate: dateOnly,
   expiresAt: z.string().datetime({ offset: true }),
-  status: z.enum(["AVAILABLE", "EXPIRED", "DISABLED"]).default("AVAILABLE"),
 }).strict();
 
 export const sandboxScenarioInputSchema = z.object({
-  demoConfirmation: z.literal(true),
-  profile: z.object({
-    profileRef: ref,
-    demoIdentifier: z.string().trim().regex(/^DEMO-[A-Z0-9][A-Z0-9-]{2,31}$/),
-    maskedDisplayName: safeText(3, 80),
-  }).strict(),
+  demoConfirmation: z.literal(true, { error: "Confirme que todos os dados são fictícios." }),
+  scenarioName: safeText(3, 100),
+  debtor: z.object({ displayName: safeText(3, 80) }).strict(),
   challenge: z.object({
-    challengeRef: ref,
     prompt: safeText(10, 200),
-    correctOptionRef: ref,
-    options: z.array(z.object({ optionRef: ref, label: safeText(1, 60) }).strict()).min(2).max(5),
+    correctOptionIndex: z.number().int().min(0).max(4),
+    options: z.array(z.object({ label: safeText(1, 60) }).strict()).min(2).max(5),
   }).strict(),
-  creditor: z.object({ creditorRef: ref, displayName: safeText(3, 100) }).strict(),
-  debtor: z.object({ debtorRef: ref }).strict(),
+  creditor: z.object({ displayName: safeText(3, 100) }).strict(),
   debt: z.object({
-    debtRef: ref,
     description: safeText(3, 160),
     amountInCents: cents,
     dueDate: dateOnly,
-    status: z.enum(["OPEN", "DISPUTED", "PAID"]).default("OPEN"),
   }).strict(),
   offers: z.array(sandboxOfferInputSchema).min(1).max(10),
 }).strict().superRefine((value, context) => {
-  const refs = value.challenge.options.map((option) => option.optionRef);
-  if (new Set(refs).size !== refs.length) {
-    context.addIssue({ code: "custom", path: ["challenge", "options"], message: "As opções devem possuir referências únicas." });
-  }
-  if (!refs.includes(value.challenge.correctOptionRef)) {
-    context.addIssue({ code: "custom", path: ["challenge", "correctOptionRef"], message: "A resposta correta deve referenciar uma opção existente." });
-  }
-  const offerRefs = value.offers.map((offer) => offer.offerRef);
-  if (new Set(offerRefs).size !== offerRefs.length) {
-    context.addIssue({ code: "custom", path: ["offers"], message: "As propostas devem possuir referências únicas." });
+  if (value.challenge.correctOptionIndex >= value.challenge.options.length) {
+    context.addIssue({ code: "custom", path: ["challenge", "correctOptionIndex"], message: "Selecione uma resposta correta existente." });
   }
 });
 

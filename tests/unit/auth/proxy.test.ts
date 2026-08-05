@@ -129,5 +129,6 @@ describe("production proxy foundation", () => {
         "x-middleware-next",
       ),
     ).toBe("1");
+    expect(internalCookieContinuesToServerValidation.headers.get("cache-control")).toBe("private, no-store");
   });
 });

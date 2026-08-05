@@ -81,6 +81,37 @@ try {
      WHERE table_schema = 'public'
        AND column_name = 'idempotencyKey'`,
   );
+  const sandboxCounts = await pool.query(
+    `SELECT 'SandboxCreditor' AS table_name, COUNT(*)::int AS count FROM "SandboxCreditor"
+     UNION ALL SELECT 'SandboxIdentityProfile', COUNT(*)::int FROM "SandboxIdentityProfile"
+     UNION ALL SELECT 'SandboxIdentityChallenge', COUNT(*)::int FROM "SandboxIdentityChallenge"
+     UNION ALL SELECT 'SandboxIdentityChallengeOption', COUNT(*)::int FROM "SandboxIdentityChallengeOption"
+     UNION ALL SELECT 'SandboxDebtor', COUNT(*)::int FROM "SandboxDebtor"
+     UNION ALL SELECT 'SandboxDebt', COUNT(*)::int FROM "SandboxDebt"
+     UNION ALL SELECT 'SandboxAuthorizedOffer', COUNT(*)::int FROM "SandboxAuthorizedOffer"
+     UNION ALL SELECT 'InternalSession', COUNT(*)::int FROM "InternalSession"
+     UNION ALL SELECT 'InternalAuditEvent', COUNT(*)::int FROM "InternalAuditEvent"
+     ORDER BY table_name`,
+  );
+  const nonDemoSandboxRows = await pool.query(
+    `SELECT
+       (SELECT COUNT(*) FROM "SandboxCreditor" WHERE "isDemo" IS NOT TRUE) +
+       (SELECT COUNT(*) FROM "SandboxIdentityProfile" WHERE "isDemo" IS NOT TRUE) +
+       (SELECT COUNT(*) FROM "SandboxIdentityChallenge" WHERE "isDemo" IS NOT TRUE) +
+       (SELECT COUNT(*) FROM "SandboxIdentityChallengeOption" WHERE "isDemo" IS NOT TRUE) +
+       (SELECT COUNT(*) FROM "SandboxDebtor" WHERE "isDemo" IS NOT TRUE) +
+       (SELECT COUNT(*) FROM "SandboxDebt" WHERE "isDemo" IS NOT TRUE) +
+       (SELECT COUNT(*) FROM "SandboxAuthorizedOffer" WHERE "isDemo" IS NOT TRUE) AS count`,
+  );
+  const sandboxScenarios = await pool.query(
+    `SELECT o.slug, p."demoIdentifier", p."scenarioName", d."displayName"
+     FROM "SandboxIdentityProfile" p
+     JOIN "Organization" o ON o.id = p."organizationId"
+     JOIN "SandboxDebtor" d ON d."identityProfileId" = p.id AND d."organizationId" = p."organizationId"
+     WHERE o.slug = ANY($1::text[])
+     ORDER BY o.slug, p."demoIdentifier"`,
+    [["jf-demo", "atlas-demo"]],
+  );
 
   const healthy =
     organization.rows[0]?.count === 1 &&
@@ -88,7 +119,15 @@ try {
     forbiddenTables.rowCount === 0 &&
     providerContextColumn.rows[0]?.count === 1 &&
     idempotencyHashColumns.rows[0]?.count === 5 &&
-    plaintextIdempotencyColumns.rows[0]?.count === 0;
+    plaintextIdempotencyColumns.rows[0]?.count === 0 &&
+    sandboxCounts.rowCount === 9 &&
+    nonDemoSandboxRows.rows[0]?.count === "0" &&
+    sandboxScenarios.rowCount > 0 &&
+    sandboxScenarios.rows.every((row) =>
+      row.demoIdentifier.startsWith("DEMO-") &&
+      row.scenarioName.trim().length >= 3 &&
+      row.displayName.trim().length >= 3
+    );
 
   if (!healthy) {
     throw new Error("A fundação persistida não corresponde ao escopo aprovado.");
@@ -104,6 +143,9 @@ try {
       idempotencyHashColumns: idempotencyHashColumns.rows[0].count,
       plaintextIdempotencyColumns:
         plaintextIdempotencyColumns.rows[0].count,
+      sandboxCounts: Object.fromEntries(sandboxCounts.rows.map((row) => [row.table_name, row.count])),
+      nonDemoSandboxRows: Number(nonDemoSandboxRows.rows[0].count),
+      sandboxScenarios: sandboxScenarios.rows,
     }) + "\n",
   );
 } catch (error) {
