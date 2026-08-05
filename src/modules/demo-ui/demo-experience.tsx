@@ -77,6 +77,7 @@ export function DemoExperience({
   const [error, setError] = useState<string | null>(null);
   const [identifier, setIdentifier] = useState("DEMO-AURORA-001");
   const [selectedOption, setSelectedOption] = useState("");
+  const terminal = conversation?.state === "CLOSED" || conversation?.state === "OPTED_OUT";
 
   const conversationStorageKey = `enki-demo:conversation:${slug}`;
 
@@ -94,7 +95,9 @@ export function DemoExperience({
     getConversation(reference)
       .then(async ({ conversation: restored }) => {
         setConversation(restored);
-        if (restored.identityStatus === "PENDING") {
+        if (restored.state === "CLOSED" || restored.state === "OPTED_OUT") {
+          return;
+        } else if (restored.identityStatus === "PENDING") {
           const current = await getChallenge(restored.id);
           setChallenge(current.challenge);
         } else if (restored.identityStatus === "VERIFIED") {
@@ -374,7 +377,15 @@ export function DemoExperience({
         </section>
       )}
 
-      {conversation?.identityStatus === "NOT_STARTED" && (
+      {conversation && terminal && (
+        <section className="panel narrow blocked" role="status">
+          <p className="eyebrow">Estado terminal</p>
+          <h2>{conversation.state === "OPTED_OUT" ? "Mensagens interrompidas" : "Conversa encerrada"}</h2>
+          <p>Nenhuma operação de negociação adicional é permitida nesta sessão.</p>
+        </section>
+      )}
+
+      {conversation?.identityStatus === "NOT_STARTED" && !terminal && (
         <section className="panel narrow">
           <p className="eyebrow">Identificação fictícia</p>
           <h2>Qual identificador DEMO deseja usar?</h2>
@@ -387,7 +398,7 @@ export function DemoExperience({
         </section>
       )}
 
-      {conversation?.identityStatus === "PENDING" && challenge && (
+      {conversation?.identityStatus === "PENDING" && challenge && !terminal && (
         <section className="panel narrow">
           <p className="eyebrow">Validação simulada</p>
           <h2>{challenge.prompt}</h2>
@@ -407,7 +418,7 @@ export function DemoExperience({
         </section>
       )}
 
-      {conversation?.identityStatus === "BLOCKED" && (
+      {conversation?.identityStatus === "BLOCKED" && !terminal && (
         <section className="panel narrow blocked" role="alert">
           <p className="eyebrow">Sessão protegida</p>
           <h2>Validação bloqueada</h2>
@@ -415,7 +426,7 @@ export function DemoExperience({
         </section>
       )}
 
-      {conversation?.identityStatus === "VERIFIED" && !selectedDebt && (
+      {conversation?.identityStatus === "VERIFIED" && !selectedDebt && !terminal && (
         <section>
           <div className="section-heading">
             <div><p className="eyebrow">Identidade validada</p><h2>Dívidas fictícias por credor</h2></div>
@@ -437,7 +448,7 @@ export function DemoExperience({
         </section>
       )}
 
-      {conversation?.identityStatus === "VERIFIED" && selectedDebt && (
+      {conversation?.identityStatus === "VERIFIED" && selectedDebt && !terminal && (
         <section className="negotiation">
           <button className="back-button" onClick={() => { setSelectedDebt(null); setSelectedOffer(null); setReceipt(null); }}>← Voltar às dívidas</button>
           <div className="detail-header">

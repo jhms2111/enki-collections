@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   acceptOffer,
+  closeConversation,
+  optOutConversation,
   registerPromise,
   type Offer,
 } from "@/modules/demo-ui/demo-api";
@@ -9,6 +11,26 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("demo api client", () => {
+  it("uses strict explicit confirmation for terminal commands", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ conversation: { state: "CLOSED" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const reference = "conv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    await closeConversation(reference);
+    await optOutConversation(reference);
+
+    for (const call of fetchMock.mock.calls) {
+      expect(JSON.parse(String(call[1].body))).toEqual({ confirmation: true });
+      expect(call[1].method).toBe("POST");
+    }
+    expect(fetchMock.mock.calls[0][0]).toContain("/close");
+    expect(fetchMock.mock.calls[1][0]).toContain("/opt-out");
+  });
+
   it("sends the canonical public terms unchanged as expectedTerms", async () => {
     const terms = {
       kind: "INSTALLMENT" as const,

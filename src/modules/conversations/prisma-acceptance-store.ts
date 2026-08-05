@@ -77,18 +77,24 @@ export class PrismaAcceptanceStore implements AcceptanceStore {
             input.conversation,
             input.audit,
           );
-          await transaction.conversation.update({
+          const changed = await transaction.conversation.updateMany({
             where: {
-              id_organizationId: {
-                id: input.conversation.id,
-                organizationId: input.conversation.organizationId,
-              },
+              id: input.conversation.id,
+              organizationId: input.conversation.organizationId,
+              state: { notIn: ["CLOSED", "OPTED_OUT"] },
             },
             data: {
               state: "OFFER_ACCEPTED",
               lastActivityAt: input.acceptance.acceptedAt,
             },
           });
+          if (changed.count !== 1) {
+            throw new ApplicationError(
+              "CONVERSATION_TERMINAL",
+              "A conversa foi encerrada e não permite novas operações.",
+              409,
+            );
+          }
 
           return input.response;
         },

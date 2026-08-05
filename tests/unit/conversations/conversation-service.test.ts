@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationStore } from "@/modules/conversations/conversation-store";
 import { ConversationService } from "@/modules/conversations/conversation-service";
@@ -7,6 +7,7 @@ import {
   identityVerificationSchema,
   organizationSlugSchema,
   publicIdentityChallengeSchema,
+  terminalConversationCommandSchema,
 } from "@/modules/conversations/conversation.schemas";
 import type {
   AuditInput,
@@ -99,8 +100,7 @@ class MemoryConversationStore implements ConversationStore {
   ) {
     const conversation = this.conversations.get(publicReference);
     return conversation?.sessionTokenHash === sessionTokenHash &&
-      conversation.startedAt >= startedAfter &&
-      !conversation.endedAt
+      conversation.startedAt >= startedAfter
       ? conversation
       : null;
   }
@@ -177,6 +177,28 @@ class MemoryConversationStore implements ConversationStore {
     this.audits.push(input.audit);
   }
 
+  async recordTerminalState(input: {
+    conversation: PersistedConversation;
+    state: "CLOSED" | "OPTED_OUT";
+    now: Date;
+    audit: AuditInput;
+  }) {
+    const current = this.require(input.conversation.publicReference);
+    if (current.state === "CLOSED" || current.state === "OPTED_OUT") {
+      return current;
+    }
+    const updated = {
+      ...current,
+      state: input.state,
+      endedAt: input.now,
+      optedOutAt: input.state === "OPTED_OUT" ? input.now : null,
+      lastActivityAt: input.now,
+    };
+    this.conversations.set(updated.publicReference, updated);
+    this.audits.push(input.audit);
+    return updated;
+  }
+
   private require(publicReference: string) {
     const conversation = this.conversations.get(publicReference);
     if (!conversation) {
@@ -197,7 +219,7 @@ function setup() {
     3_600,
     () => fixedNow,
   );
-  return { store, service };
+  return { store, provider, service };
 }
 
 async function createAndIdentify() {
@@ -606,6 +628,59 @@ describe("ConversationService", () => {
     ).rejects.toMatchObject({ code: "MESSAGING_OPTED_OUT" });
   });
 
+  it("closes before identity, persists one audit, and repeats idempotently", async () => {
+    const { store, provider, service } = setup();
+    const providerCall = vi.spyOn(provider, "identifyDebtor");
+    const created = await service.create("jf-demo");
+    const first = await service.close(created.conversation.id, created.token);
+    const repeated = await service.close(created.conversation.id, created.token);
+
+    expect(first.state).toBe("CLOSED");
+    expect(first.endedAt).toBe(fixedNow.toISOString());
+    expect(repeated).toEqual(first);
+    expect(store.audits.filter((audit) => audit.eventType === "CONVERSATION_CLOSED")).toHaveLength(1);
+    expect(providerCall).not.toHaveBeenCalled();
+    await expect(
+      service.identify(created.conversation.id, created.token, "DEMO-AURORA-001", "after-close"),
+    ).rejects.toMatchObject({ code: "CONVERSATION_CLOSED" });
+  });
+
+  it("requires the matching session cookie for terminal commands", async () => {
+    const { service } = setup();
+    const jf = await service.create("jf-demo");
+    const atlas = await service.create("atlas-demo");
+    await expect(service.close(jf.conversation.id, undefined)).rejects.toMatchObject({ code: "SESSION_REQUIRED" });
+    await expect(service.optOut(jf.conversation.id, atlas.token)).rejects.toMatchObject({ code: "SESSION_INVALID" });
+  });
+
+  it("opts out before identity and keeps OPTED_OUT terminal", async () => {
+    const { store, service } = setup();
+    const created = await service.create("jf-demo");
+    const first = await service.optOut(created.conversation.id, created.token);
+    const repeated = await service.optOut(created.conversation.id, created.token);
+    const closeAfterOptOut = await service.close(created.conversation.id, created.token);
+
+    expect(first.state).toBe("OPTED_OUT");
+    expect(first.optedOutAt).toBe(fixedNow.toISOString());
+    expect(repeated).toEqual(first);
+    expect(closeAfterOptOut.state).toBe("OPTED_OUT");
+    expect(store.audits.filter((audit) => audit.eventType === "CONVERSATION_OPTED_OUT")).toHaveLength(1);
+    expect(store.audits.some((audit) => audit.eventType === "CONVERSATION_CLOSED")).toBe(false);
+  });
+
+  it("returns one deterministic result for simultaneous repeated opt-out", async () => {
+    const { store, service } = setup();
+    const created = await service.create("jf-demo");
+    const results = await Promise.all([
+      service.optOut(created.conversation.id, created.token),
+      service.optOut(created.conversation.id, created.token),
+    ]);
+
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0].state).toBe("OPTED_OUT");
+    expect(store.audits.filter((audit) => audit.eventType === "CONVERSATION_OPTED_OUT")).toHaveLength(1);
+  });
+
   it("returns a safe not-found result for an unknown organization", async () => {
     const { service } = setup();
 
@@ -645,5 +720,11 @@ describe("conversation input schemas", () => {
         correctOptionRef: "option-a",
       }),
     ).toThrow();
+  });
+
+  it("requires explicit terminal confirmation and rejects extra fields", () => {
+    expect(terminalConversationCommandSchema.parse({ confirmation: true })).toEqual({ confirmation: true });
+    expect(() => terminalConversationCommandSchema.parse({ confirmation: false })).toThrow();
+    expect(() => terminalConversationCommandSchema.parse({ confirmation: true, state: "CLOSED" })).toThrow();
   });
 });

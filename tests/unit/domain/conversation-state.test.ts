@@ -20,5 +20,9 @@ describe("assertConversationTransition", () => {
       assertConversationTransition("OPTED_OUT", "DEBT_SELECTED"),
     ).toThrowError(/Transição inválida/);
   });
-});
 
+  it("keeps both terminal states from transitioning", () => {
+    expect(() => assertConversationTransition("OPTED_OUT", "CLOSED")).toThrow();
+    expect(() => assertConversationTransition("CLOSED", "STARTED")).toThrow();
+  });
+});

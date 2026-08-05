@@ -7,9 +7,11 @@ export default async function DemoPage({
 }) {
   const { slug } = await params;
   return (
-    <DemoExperience
-      slug={slug}
-      version={process.env.DEMO_VERSION ?? "local"}
-    />
+    <>
+      <a className="chat-entry" href={`/demo/${encodeURIComponent(slug)}/chat`}>
+        Abrir webchat demonstrativo
+      </a>
+      <DemoExperience slug={slug} version={process.env.DEMO_VERSION ?? "local"} />
+    </>
   );
 }

@@ -69,6 +69,9 @@ class TestConversationStore implements ConversationStore {
   }
 
   async recordAudit(): Promise<void> {}
+  async recordTerminalState(): Promise<PersistedConversation> {
+    throw new Error("Not implemented in this test.");
+  }
 }
 
 class TestAcceptanceStore implements AcceptanceStore {
@@ -330,6 +333,32 @@ describe("OfferAcceptanceService", () => {
         requestId: "request-without-cookie",
       }),
     ).rejects.toMatchObject({ code: "SESSION_REQUIRED", status: 401 });
+
+    const closedConversation: PersistedConversation = {
+      ...setup.conversation,
+      state: "CLOSED",
+      endedAt: now,
+    };
+    const closedService = new OfferAcceptanceService(
+      new TestConversationStore(closedConversation),
+      setup.acceptanceStore,
+      setup.provider,
+      secret,
+      idempotencySecret,
+      3_600,
+      () => now,
+    );
+    await expect(
+      closedService.acceptOffer({
+        publicReference: closedConversation.publicReference,
+        token,
+        debtRef: "debt-001",
+        offerRef: "offer-cash-001",
+        idempotencyKey: rawKey,
+        request: setup.request,
+        requestId: "request-closed",
+      }),
+    ).rejects.toMatchObject({ code: "CONVERSATION_CLOSED" });
 
     const unverifiedConversation: PersistedConversation = {
       ...setup.conversation,

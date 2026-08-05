@@ -46,4 +46,11 @@ export interface ConversationStore {
     conversation: PersistedConversation;
     audit: AuditInput;
   }): Promise<void>;
+
+  recordTerminalState(input: {
+    conversation: PersistedConversation;
+    state: "CLOSED" | "OPTED_OUT";
+    now: Date;
+    audit: AuditInput;
+  }): Promise<PersistedConversation>;
 }

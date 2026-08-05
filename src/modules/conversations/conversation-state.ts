@@ -48,7 +48,7 @@ const allowedTransitions: Readonly<
   ],
   OFFER_ACCEPTED: ["HUMAN_HANDOFF", "OPTED_OUT", "CLOSED"],
   HUMAN_HANDOFF: ["OPTED_OUT", "CLOSED"],
-  OPTED_OUT: ["CLOSED"],
+  OPTED_OUT: [],
   IDENTITY_BLOCKED: ["HUMAN_HANDOFF", "OPTED_OUT", "CLOSED"],
   CLOSED: [],
 };
@@ -65,4 +65,3 @@ export function assertConversationTransition(
     );
   }
 }
-

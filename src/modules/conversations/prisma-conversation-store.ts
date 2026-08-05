@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import { ApplicationError } from "@/shared/errors/application-error";
 
 import type { ConversationStore } from "./conversation-store";
 import type { VerifiedDebtorContext } from "@/modules/debt-provider/debt-provider.types";
@@ -113,7 +114,6 @@ export class PrismaConversationStore implements ConversationStore {
         startedAt: {
           gte: startedAfter,
         },
-        endedAt: null,
         organization: {
           status: "ACTIVE",
         },
@@ -131,12 +131,11 @@ export class PrismaConversationStore implements ConversationStore {
     audit: AuditInput;
   }): Promise<PersistedConversation> {
     await this.client.$transaction(async (transaction) => {
-      await transaction.conversation.update({
+      const changed = await transaction.conversation.updateMany({
         where: {
-          id_organizationId: {
-            id: input.conversation.id,
-            organizationId: input.conversation.organizationId,
-          },
+          id: input.conversation.id,
+          organizationId: input.conversation.organizationId,
+          state: { notIn: ["CLOSED", "OPTED_OUT"] },
         },
         data: {
           debtorRef: input.identificationRef,
@@ -145,6 +144,7 @@ export class PrismaConversationStore implements ConversationStore {
           lastActivityAt: input.now,
         },
       });
+      this.requireMutable(changed.count);
       await this.createAudit(transaction, {
         organizationId: input.conversation.organizationId,
         conversationId: input.conversation.id,
@@ -178,8 +178,13 @@ export class PrismaConversationStore implements ConversationStore {
         select: {
           failedIdentityAttempts: true,
           identityStatus: true,
+          state: true,
         },
       });
+
+      if (current.state === "CLOSED" || current.state === "OPTED_OUT") {
+        this.requireMutable(0);
+      }
 
       if (current.identityStatus === "BLOCKED") {
         return;
@@ -270,6 +275,42 @@ export class PrismaConversationStore implements ConversationStore {
     });
   }
 
+  async recordTerminalState(input: {
+    conversation: PersistedConversation;
+    state: "CLOSED" | "OPTED_OUT";
+    now: Date;
+    audit: AuditInput;
+  }): Promise<PersistedConversation> {
+    await this.client.$transaction(async (transaction) => {
+      const changed = await transaction.conversation.updateMany({
+        where: {
+          id: input.conversation.id,
+          organizationId: input.conversation.organizationId,
+          state: { notIn: ["CLOSED", "OPTED_OUT"] },
+        },
+        data: {
+          state: input.state,
+          endedAt: input.now,
+          optedOutAt: input.state === "OPTED_OUT" ? input.now : null,
+          lastActivityAt: input.now,
+        },
+      });
+
+      if (changed.count === 1) {
+        await this.createAudit(transaction, {
+          organizationId: input.conversation.organizationId,
+          conversationId: input.conversation.id,
+          audit: input.audit,
+        });
+      }
+    });
+
+    return this.requireConversation(
+      input.conversation.id,
+      input.conversation.organizationId,
+    );
+  }
+
   private async requireConversation(
     id: string,
     organizationId: string,
@@ -309,6 +350,16 @@ export class PrismaConversationStore implements ConversationStore {
         occurredAt: input.audit.occurredAt,
       },
     });
+  }
+
+  private requireMutable(count: number): void {
+    if (count !== 1) {
+      throw new ApplicationError(
+        "CONVERSATION_TERMINAL",
+        "A conversa foi encerrada e não permite novas operações.",
+        409,
+      );
+    }
   }
 
   private mapConversation(

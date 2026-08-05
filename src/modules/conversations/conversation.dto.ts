@@ -9,6 +9,7 @@ export type PublicConversationDto = Readonly<{
   startedAt: string;
   lastActivityAt: string;
   endedAt: string | null;
+  optedOutAt: string | null;
   messages: readonly Readonly<{
     direction: "INBOUND" | "OUTBOUND";
     actor: "DEBTOR" | "SYSTEM" | "HUMAN_AGENT";
@@ -30,6 +31,7 @@ export function toPublicConversationDto(
     startedAt: conversation.startedAt.toISOString(),
     lastActivityAt: conversation.lastActivityAt.toISOString(),
     endedAt: conversation.endedAt?.toISOString() ?? null,
+    optedOutAt: conversation.optedOutAt?.toISOString() ?? null,
     messages: conversation.messages.map((message) => ({
       direction: message.direction,
       actor: message.actor,

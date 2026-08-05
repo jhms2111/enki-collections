@@ -72,6 +72,14 @@ export class ConversationService {
     return toPublicConversationDto(conversation);
   }
 
+  async close(publicReference: string, token: string | undefined) {
+    return this.setTerminalState(publicReference, token, "CLOSED");
+  }
+
+  async optOut(publicReference: string, token: string | undefined) {
+    return this.setTerminalState(publicReference, token, "OPTED_OUT");
+  }
+
   async identify(
     publicReference: string,
     token: string | undefined,
@@ -139,6 +147,13 @@ export class ConversationService {
     requestId: string,
   ) {
     const conversation = await this.authenticate(publicReference, token);
+    if (conversation.state === "CLOSED" || conversation.state === "OPTED_OUT") {
+      return {
+        status: conversation.state,
+        challenge: null,
+        attemptsRemaining: 0,
+      };
+    }
     if (
       conversation.identityStatus === "VERIFIED" ||
       conversation.state === "IDENTITY_VERIFIED" ||
@@ -373,6 +388,13 @@ export class ConversationService {
         409,
       );
     }
+    if (conversation.endedAt || conversation.state === "CLOSED") {
+      throw new ApplicationError(
+        "CONVERSATION_CLOSED",
+        "A conversa foi encerrada e nÃ£o pode ser reaberta.",
+        409,
+      );
+    }
     if (conversation.state === "IDENTITY_BLOCKED") {
       throw new ApplicationError(
         "IDENTITY_LOCKED",
@@ -380,6 +402,36 @@ export class ConversationService {
         423,
       );
     }
+  }
+
+  private async setTerminalState(
+    publicReference: string,
+    token: string | undefined,
+    requestedState: "CLOSED" | "OPTED_OUT",
+  ) {
+    const conversation = await this.authenticate(publicReference, token);
+    if (
+      conversation.state === "OPTED_OUT" ||
+      conversation.state === "CLOSED"
+    ) {
+      return toPublicConversationDto(conversation);
+    }
+    const now = this.now();
+    const updated = await this.store.recordTerminalState({
+      conversation,
+      state: requestedState,
+      now,
+      audit: {
+        eventType:
+          requestedState === "OPTED_OUT"
+            ? "CONVERSATION_OPTED_OUT"
+            : "CONVERSATION_CLOSED",
+        actor: "DEBTOR",
+        metadata: { channel: "WEBCHAT" },
+        occurredAt: now,
+      },
+    });
+    return toPublicConversationDto(updated);
   }
 
   private requireVerifiedContext(

@@ -24,6 +24,8 @@ export type Conversation = Readonly<{
   identityStatus: string;
   failedIdentityAttempts: number;
   startedAt: string;
+  endedAt?: string | null;
+  optedOutAt?: string | null;
 }>;
 
 export type Debt = Readonly<{
@@ -98,6 +100,20 @@ async function requestJson<T>(
   return payload as T;
 }
 
+export function closeConversation(conversationId: string) {
+  return requestJson<{ conversation: Conversation }>(
+    `/api/v1/public/conversations/${encodeURIComponent(conversationId)}/close`,
+    { method: "POST", body: JSON.stringify({ confirmation: true }) },
+  );
+}
+
+export function optOutConversation(conversationId: string) {
+  return requestJson<{ conversation: Conversation }>(
+    `/api/v1/public/conversations/${encodeURIComponent(conversationId)}/opt-out`,
+    { method: "POST", body: JSON.stringify({ confirmation: true }) },
+  );
+}
+
 export function createConversation(slug: string) {
   return requestJson<{ conversation: Conversation }>(
     `/api/v1/public/organizations/${encodeURIComponent(slug)}/conversations`,
@@ -127,7 +143,7 @@ export function identify(conversationId: string, demoIdentifier: string) {
 
 export function getChallenge(conversationId: string) {
   return requestJson<{
-    status: "NOT_STARTED" | "PENDING" | "VERIFIED" | "BLOCKED";
+    status: "NOT_STARTED" | "PENDING" | "VERIFIED" | "BLOCKED" | "CLOSED" | "OPTED_OUT";
     challenge: PublicChallenge | null;
     attemptsRemaining: number;
   }>(

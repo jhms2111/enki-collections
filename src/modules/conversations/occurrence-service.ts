@@ -270,6 +270,13 @@ export class OccurrenceService {
         409,
       );
     }
+    if (conversation.endedAt || conversation.state === "CLOSED") {
+      throw new ApplicationError(
+        "CONVERSATION_CLOSED",
+        "A conversa foi encerrada e nÃ£o pode ser reaberta.",
+        409,
+      );
+    }
     if (
       conversation.identityStatus !== "VERIFIED" ||
       !["IDENTITY_VERIFIED", "OFFER_ACCEPTED"].includes(conversation.state) ||

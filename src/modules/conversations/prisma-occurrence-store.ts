@@ -95,15 +95,21 @@ export class PrismaOccurrenceStore implements OccurrenceStore {
             occurredAt: input.audit.occurredAt,
           },
         });
-        await tx.conversation.update({
+        const changed = await tx.conversation.updateMany({
           where: {
-            id_organizationId: {
-              id: input.conversation.id,
-              organizationId: input.conversation.organizationId,
-            },
+            id: input.conversation.id,
+            organizationId: input.conversation.organizationId,
+            state: { notIn: ["CLOSED", "OPTED_OUT"] },
           },
           data: { lastActivityAt: input.audit.occurredAt },
         });
+        if (changed.count !== 1) {
+          throw new ApplicationError(
+            "CONVERSATION_TERMINAL",
+            "A conversa foi encerrada e não permite novas operações.",
+            409,
+          );
+        }
         return input.response;
       }, { isolationLevel: "Serializable" });
     } catch (error) {

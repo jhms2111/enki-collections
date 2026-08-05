@@ -48,3 +48,7 @@ export const publicIdentityChallengeSchema = z.object({
     .max(10),
   attemptsRemaining: z.number().int().min(0).max(10),
 }).strict();
+
+export const terminalConversationCommandSchema = z
+  .object({ confirmation: z.literal(true) })
+  .strict();

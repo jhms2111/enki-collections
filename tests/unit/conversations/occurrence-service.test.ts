@@ -50,6 +50,9 @@ class ConversationMemoryStore implements ConversationStore {
     throw new Error("not implemented");
   }
   async recordAudit(): Promise<void> {}
+  async recordTerminalState(): Promise<PersistedConversation> {
+    throw new Error("not implemented");
+  }
 }
 
 class OccurrenceMemoryStore implements OccurrenceStore {
@@ -237,6 +240,14 @@ describe("OccurrenceService", () => {
         request: { reasonCode: "NOT_RECOGNIZED" },
       }),
     ).rejects.toMatchObject({ code: "MESSAGING_OPTED_OUT" });
+
+    const closed = await setup({ state: "CLOSED", endedAt: now });
+    await expect(
+      closed.service.reportPayment({
+        ...closed.common,
+        request: { reportedAt: now.toISOString() },
+      }),
+    ).rejects.toMatchObject({ code: "CONVERSATION_CLOSED" });
   });
 
   it("scopes a key by operation and rejects a changed payload", async () => {
