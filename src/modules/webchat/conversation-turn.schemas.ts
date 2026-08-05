@@ -16,6 +16,16 @@ export const conversationTurnRequestSchema = z
   })
   .strict();
 
+export const conversationTurnPublicResponseSchema = z
+  .object({
+    intent: z.enum(conversationalIntents),
+    message: z.string().min(1).max(1_200),
+    suggestedActions: z.array(z.enum(conversationalIntents)).max(4),
+    requiresConfirmation: z.boolean(),
+    fallbackUsed: z.boolean(),
+  })
+  .strict();
+
 const explanationSegmentSchema = z
   .object({
     type: z.enum(["TEXT", "FACT_REF"]),

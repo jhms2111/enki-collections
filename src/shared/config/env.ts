@@ -25,11 +25,51 @@ const runtimeEnvSchema = z.object({
   ),
   OPENAI_TIMEOUT_MS: z.preprocess(
     (value) => value === "" ? undefined : value,
-    z.coerce.number().int().min(500).max(10_000).default(3_000),
+    z.coerce.number().int().min(500).max(10_000).default(2_500),
   ),
   OPENAI_MAX_OUTPUT_TOKENS: z.preprocess(
     (value) => value === "" ? undefined : value,
-    z.coerce.number().int().min(64).max(1_000).default(300),
+    z.coerce.number().int().min(64).max(1_000).default(200),
+  ),
+  OPENAI_MAX_INPUT_TOKENS: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(500).max(20_000).default(4_000),
+  ),
+  OPENAI_API_KEY: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().min(20).optional(),
+  ),
+  OPENAI_SAFETY_HMAC_SECRET: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().min(64).optional(),
+  ),
+  OPENAI_MAX_RETRIES: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(0).max(1).default(1),
+  ),
+  OPENAI_TOTAL_DEADLINE_MS: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(1_000).max(10_000).default(4_000),
+  ),
+  OPENAI_MAX_CALLS_PER_CONVERSATION: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(1).max(20).default(5),
+  ),
+  OPENAI_DAILY_BUDGET_USD: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().positive().max(100).default(0.5),
+  ),
+  OPENAI_MONTHLY_BUDGET_USD: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().positive().max(1_000).default(5),
+  ),
+  OPENAI_CIRCUIT_FAILURE_THRESHOLD: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(1).max(20).default(5),
+  ),
+  OPENAI_CIRCUIT_OPEN_SECONDS: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.coerce.number().int().min(10).max(3_600).default(60),
   ),
 }).refine(
   (env) =>
@@ -38,7 +78,20 @@ const runtimeEnvSchema = z.object({
     path: ["IDEMPOTENCY_HMAC_SECRET"],
     message: "O segredo de idempotência deve ser dedicado.",
   },
-);
+).superRefine((env, context) => {
+  if (env.OPENAI_ENABLED && !env.OPENAI_API_KEY) {
+    context.addIssue({ code: "custom", path: ["OPENAI_API_KEY"], message: "OPENAI_API_KEY é obrigatória quando OpenAI está habilitada." });
+  }
+  if (env.OPENAI_ENABLED && !env.OPENAI_SAFETY_HMAC_SECRET) {
+    context.addIssue({ code: "custom", path: ["OPENAI_SAFETY_HMAC_SECRET"], message: "Segredo dedicado de safety_identifier é obrigatório." });
+  }
+  if (env.OPENAI_SAFETY_HMAC_SECRET && [env.CONVERSATION_SESSION_SECRET, env.IDEMPOTENCY_HMAC_SECRET].includes(env.OPENAI_SAFETY_HMAC_SECRET)) {
+    context.addIssue({ code: "custom", path: ["OPENAI_SAFETY_HMAC_SECRET"], message: "O segredo de IA deve ser dedicado." });
+  }
+  if (env.OPENAI_DAILY_BUDGET_USD > env.OPENAI_MONTHLY_BUDGET_USD) {
+    context.addIssue({ code: "custom", path: ["OPENAI_DAILY_BUDGET_USD"], message: "O orçamento diário não pode superar o mensal." });
+  }
+});
 
 export type RuntimeEnv = z.infer<typeof runtimeEnvSchema>;
 

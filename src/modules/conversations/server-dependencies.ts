@@ -8,9 +8,10 @@ import { OccurrenceService } from "./occurrence-service";
 import { PrismaAcceptanceStore } from "./prisma-acceptance-store";
 import { PrismaConversationStore } from "./prisma-conversation-store";
 import { PrismaOccurrenceStore } from "./prisma-occurrence-store";
-import { ClosedAiUsageBudgetGate, ConversationTurnOrchestrator } from "@/modules/webchat/conversation-turn-orchestrator";
+import { ClosedAiUsageBudgetGate, ConversationTurnOrchestrator, ReservedAiUsageBudgetGate } from "@/modules/webchat/conversation-turn-orchestrator";
 import { ConversationTurnService } from "@/modules/webchat/conversation-turn-service";
-import { UnavailableNaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
+import { FetchOpenAIResponsesTransport, OpenAIResponsesIntentClient, UnavailableNaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
+import { PrismaAiOperationalStore } from "@/modules/webchat/prisma-ai-operational-store";
 
 export function getConversationService(): ConversationService {
   const env = getRuntimeEnv();
@@ -52,14 +53,42 @@ export function getOfferAcceptanceService(): OfferAcceptanceService {
 
 export function getConversationTurnService(): ConversationTurnService {
   const env = getRuntimeEnv();
+  const prisma = getPrisma();
+  const intentClient = env.OPENAI_ENABLED && env.OPENAI_API_KEY
+    ? new OpenAIResponsesIntentClient(
+        new FetchOpenAIResponsesTransport(
+          env.OPENAI_API_KEY,
+          env.OPENAI_MAX_RETRIES,
+          env.OPENAI_TOTAL_DEADLINE_MS,
+        ),
+        env.OPENAI_MODEL,
+        env.OPENAI_TIMEOUT_MS,
+        env.OPENAI_MAX_OUTPUT_TOKENS,
+      )
+    : new UnavailableNaturalLanguageIntentClient();
   return new ConversationTurnService(
-    new PrismaConversationStore(getPrisma()),
+    new PrismaConversationStore(prisma),
     new ConversationTurnOrchestrator(
-      new UnavailableNaturalLanguageIntentClient(),
-      new ClosedAiUsageBudgetGate(),
+      intentClient,
+      env.OPENAI_ENABLED ? new ReservedAiUsageBudgetGate() : new ClosedAiUsageBudgetGate(),
       { enabled: env.OPENAI_ENABLED, model: env.OPENAI_MODEL },
     ),
     env.CONVERSATION_SESSION_SECRET,
     env.SESSION_COOKIE_MAX_AGE_SECONDS,
+    undefined,
+    env.OPENAI_ENABLED ? new PrismaAiOperationalStore(prisma) : undefined,
+    {
+      enabled: env.OPENAI_ENABLED,
+      model: env.OPENAI_MODEL,
+      safetyHmacSecret: env.OPENAI_SAFETY_HMAC_SECRET,
+      maxInputTokens: env.OPENAI_MAX_INPUT_TOKENS,
+      maxOutputTokens: env.OPENAI_MAX_OUTPUT_TOKENS,
+      maxCallsPerConversation: env.OPENAI_MAX_CALLS_PER_CONVERSATION,
+      dailyBudgetUsd: env.OPENAI_DAILY_BUDGET_USD,
+      monthlyBudgetUsd: env.OPENAI_MONTHLY_BUDGET_USD,
+      circuitFailureThreshold: env.OPENAI_CIRCUIT_FAILURE_THRESHOLD,
+      circuitOpenSeconds: env.OPENAI_CIRCUIT_OPEN_SECONDS,
+      reservationTtlMs: env.OPENAI_TOTAL_DEADLINE_MS + 5_000,
+    },
   );
 }

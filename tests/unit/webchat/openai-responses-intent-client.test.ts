@@ -15,6 +15,7 @@ const turn: NormalizedInboundTurn = {
   conversationState: "IDENTITY_VERIFIED",
   identityStatus: "VERIFIED",
   uiContext: "DEBT_DETAIL",
+  safetyIdentifier: "pseudonymous-safety-identifier",
   canonicalFacts: [{ key: "fact_amount", displayText: "SEGREDO-CANÔNICO" }],
 };
 
@@ -50,6 +51,8 @@ describe("OpenAIResponsesIntentClient", () => {
     const request = capturedRequest!;
     expect(request.model).toBe("gpt-5.6-luna");
     expect(request.store).toBe(false);
+    expect(request.reasoning).toEqual({ effort: "none" });
+    expect(request.safety_identifier).toBe("pseudonymous-safety-identifier");
     expect(request.text.format).toEqual({
       type: "json_schema",
       name: "enki_intent",
@@ -90,6 +93,6 @@ describe("OpenAIResponsesIntentClient", () => {
       },
     };
     const client = new OpenAIResponsesIntentClient(transport, "configured-model", 5, 100);
-    await expect(client.interpret(turn)).rejects.toThrow("aborted");
+    await expect(client.interpret(turn)).rejects.toMatchObject({ category: "INVALID_RESPONSE" });
   });
 });

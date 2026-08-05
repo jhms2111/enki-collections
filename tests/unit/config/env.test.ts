@@ -19,6 +19,11 @@ describe("getRuntimeEnv", () => {
     expect(env.CHAT_MAX_MESSAGE_LENGTH).toBe(1_200);
     expect(env.OPENAI_ENABLED).toBe(false);
     expect(env.OPENAI_MODEL).toBe("gpt-5.6-luna");
+    expect(env.OPENAI_MAX_CALLS_PER_CONVERSATION).toBe(5);
+    expect(env.OPENAI_DAILY_BUDGET_USD).toBe(0.5);
+    expect(env.OPENAI_MONTHLY_BUDGET_USD).toBe(5);
+    expect(env.OPENAI_TIMEOUT_MS).toBe(2_500);
+    expect(env.OPENAI_MAX_OUTPUT_TOKENS).toBe(200);
   });
 
   it("rejects a short session secret", () => {
@@ -50,5 +55,16 @@ describe("getRuntimeEnv", () => {
     const env = getRuntimeEnv(validEnvironment);
 
     expect(env.ADMIN_DEMO_SECRET).toBeUndefined();
+  });
+
+  it("requires a dedicated key and safety secret only when OpenAI is enabled", () => {
+    expect(() => getRuntimeEnv({ ...validEnvironment, OPENAI_ENABLED: "true" })).toThrow();
+    const env = getRuntimeEnv({
+      ...validEnvironment,
+      OPENAI_ENABLED: "true",
+      OPENAI_API_KEY: "entirely-fictitious-test-api-key",
+      OPENAI_SAFETY_HMAC_SECRET: "s".repeat(64),
+    });
+    expect(env.OPENAI_ENABLED).toBe(true);
   });
 });

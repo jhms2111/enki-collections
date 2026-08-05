@@ -1,5 +1,5 @@
 import { interpretSafeChatText } from "./deterministic-intent";
-import { intentPromptVersion, type NaturalLanguageIntentClient } from "./openai-responses-intent-client";
+import { intentPromptVersion, OpenAITransportError, type NaturalLanguageIntentClient } from "./openai-responses-intent-client";
 import type {
   BotTurn,
   ConversationalIntent,
@@ -29,6 +29,11 @@ export class ClosedAiUsageBudgetGate implements AiUsageBudgetGate {
   async recordUsage(): Promise<void> {}
 }
 
+export class ReservedAiUsageBudgetGate implements AiUsageBudgetGate {
+  async allowRequest(): Promise<boolean> { return true; }
+  async recordUsage(): Promise<void> {}
+}
+
 export class ConversationTurnOrchestrator {
   constructor(
     private readonly client: NaturalLanguageIntentClient,
@@ -46,10 +51,19 @@ export class ConversationTurnOrchestrator {
 
     try {
       const result = await this.client.interpret(turn);
-      if (result.output.confidence === "LOW") return this.fallback(turn, "LOW_CONFIDENCE");
+      if (result.output.confidence === "LOW") {
+        return this.fallback(turn, "LOW_CONFIDENCE", { model: this.config.model, usage: result.usage });
+      }
       const allowed = this.allowedIntents(turn);
-      if (!allowed.has(result.output.intent)) return this.fallback(turn, "INTENT_NOT_ALLOWED");
-      const message = this.renderExplanation(turn, result.output.explanationSegments);
+      if (!allowed.has(result.output.intent)) {
+        return this.fallback(turn, "INTENT_NOT_ALLOWED", { model: this.config.model, usage: result.usage, failureCategory: "POLICY" });
+      }
+      let message: string;
+      try {
+        message = this.renderExplanation(turn, result.output.explanationSegments);
+      } catch {
+        return this.fallback(turn, "UNSAFE_MODEL_OUTPUT", { model: this.config.model, usage: result.usage, failureCategory: "POLICY" });
+      }
       const suggestedActions = result.output.suggestedActions.filter((intent) => allowed.has(intent));
       await this.budget.recordUsage(result.usage);
       return {
@@ -62,9 +76,16 @@ export class ConversationTurnOrchestrator {
         promptVersion: intentPromptVersion,
         usage: result.usage,
       };
-    } catch {
-      return this.fallback(turn, "MODEL_UNAVAILABLE");
+    } catch (error) {
+      return this.fallback(turn, "MODEL_UNAVAILABLE", {
+        model: this.config.model,
+        failureCategory: error instanceof OpenAITransportError ? error.category : "INVALID_RESPONSE",
+      });
     }
+  }
+
+  handleDeterministic(turn: NormalizedInboundTurn, reason = "FREE_FALLBACK"): BotTurn {
+    return this.fallback(turn, reason);
   }
 
   private renderExplanation(
@@ -107,7 +128,11 @@ export class ConversationTurnOrchestrator {
     return new Set(verified);
   }
 
-  private fallback(turn: NormalizedInboundTurn, reason: string): BotTurn {
+  private fallback(
+    turn: NormalizedInboundTurn,
+    reason: string,
+    technical: Pick<BotTurn, "model" | "usage" | "failureCategory"> = {},
+  ): BotTurn {
     if (turn.conversationState === "OPTED_OUT") {
       return this.fallbackResult("UNKNOWN", "As mensagens estão interrompidas nesta conversa.", reason);
     }
@@ -122,13 +147,14 @@ export class ConversationTurnOrchestrator {
         : localIntent === "LIST_OFFERS" && turn.uiContext !== "DEBT_LIST"
           ? "As propostas previamente autorizadas estão nos botões abaixo."
           : "Não entendi com segurança. Escolha uma das opções exibidas; nenhuma ação foi executada.";
-    return this.fallbackResult(localIntent, message, reason);
+    return this.fallbackResult(localIntent, message, reason, technical);
   }
 
   private fallbackResult(
     intent: ConversationalIntent,
     message: string,
     reason: string,
+    technical: Pick<BotTurn, "model" | "usage" | "failureCategory"> = {},
   ): BotTurn {
     return {
       intent,
@@ -137,6 +163,7 @@ export class ConversationTurnOrchestrator {
       requiresConfirmation: false,
       fallbackUsed: true,
       fallbackReason: reason,
+      ...technical,
     };
   }
 }

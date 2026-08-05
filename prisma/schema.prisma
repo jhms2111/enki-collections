@@ -63,6 +63,23 @@ enum InternalRole {
   SANDBOX_EDITOR
 }
 
+enum AiTurnStatus {
+  RESERVED
+  SUCCEEDED
+  FALLBACK
+}
+
+enum AiBudgetPeriodType {
+  DAILY
+  MONTHLY
+}
+
+enum AiCircuitState {
+  CLOSED
+  OPEN
+  HALF_OPEN
+}
+
 model Organization {
   id                              String                           @id @default(cuid())
   slug                            String                           @unique @db.VarChar(80)
@@ -89,6 +106,61 @@ model Organization {
   sandboxDebtors                  SandboxDebtor[]
   sandboxDebts                    SandboxDebt[]
   sandboxAuthorizedOffers         SandboxAuthorizedOffer[]
+  aiTurnExecutions                AiTurnExecution[]
+  aiBudgetPeriods                 AiBudgetPeriod[]
+  aiCircuitBreaker                AiCircuitBreaker?
+}
+
+model AiTurnExecution {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  conversationKeyHash  String       @db.Char(64)
+  clientTurnKeyHash    String       @db.Char(64)
+  requestFingerprint   String       @db.Char(64)
+  status               AiTurnStatus @default(RESERVED)
+  reservedCostMicrousd BigInt
+  actualCostMicrousd   BigInt?
+  inputTokens          Int?
+  outputTokens         Int?
+  model                String?      @db.VarChar(80)
+  publicResponse       Json?
+  failureCategory      String?      @db.VarChar(40)
+  reservedUntil        DateTime
+  createdAt            DateTime     @default(now())
+  completedAt          DateTime?
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, conversationKeyHash, clientTurnKeyHash])
+  @@index([organizationId, status, createdAt])
+}
+
+model AiBudgetPeriod {
+  id                   String             @id @default(cuid())
+  organizationId       String
+  periodType           AiBudgetPeriodType
+  periodStart          DateTime           @db.Date
+  allocatedCostMicrousd BigInt            @default(0)
+  reservedCostMicrousd BigInt             @default(0)
+  consumedCostMicrousd BigInt             @default(0)
+  requestCount         Int                @default(0)
+  updatedAt            DateTime           @updatedAt
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, periodType, periodStart])
+  @@index([organizationId, periodStart])
+}
+
+model AiCircuitBreaker {
+  id                    String         @id @default(cuid())
+  organizationId        String         @unique
+  state                 AiCircuitState @default(CLOSED)
+  consecutiveFailures   Int            @default(0)
+  windowStartedAt       DateTime?
+  openUntil             DateTime?
+  halfOpenProbeInFlight Boolean        @default(false)
+  lastFailureCategory   String?        @db.VarChar(40)
+  updatedAt             DateTime       @updatedAt
+  organization          Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model Conversation {
