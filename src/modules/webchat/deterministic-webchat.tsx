@@ -48,6 +48,10 @@ function safeError(error: unknown) {
   return "Não foi possível concluir esta etapa. Tente novamente.";
 }
 
+export function scrollChatEnd(element: HTMLDivElement | null): void {
+  element?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+}
+
 export function DeterministicWebchat({ slug, version }: { slug: string; version: string }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [challenge, setChallenge] = useState<PublicChallenge | null>(null);
@@ -111,7 +115,7 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
       .finally(() => setBusy(false));
   }, [bot, loadSafeState, storageKey]);
 
-  useEffect(() => logEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), [messages, busy]);
+  useEffect(() => scrollChatEnd(logEnd.current), [messages, busy]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
