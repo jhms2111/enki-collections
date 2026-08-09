@@ -10,7 +10,7 @@ import { PrismaConversationStore } from "./prisma-conversation-store";
 import { PrismaOccurrenceStore } from "./prisma-occurrence-store";
 import { ClosedAiUsageBudgetGate, ConversationTurnOrchestrator, ReservedAiUsageBudgetGate } from "@/modules/webchat/conversation-turn-orchestrator";
 import { ConversationTurnService } from "@/modules/webchat/conversation-turn-service";
-import { FetchOpenAIResponsesTransport, OpenAIResponsesIntentClient, UnavailableNaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
+import { FetchOpenAIResponsesTransport, LazyNaturalLanguageIntentClient, OpenAIResponsesIntentClient, UnavailableNaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
 import { PrismaAiOperationalStore } from "@/modules/webchat/prisma-ai-operational-store";
 
 export function getConversationService(): ConversationService {
@@ -55,16 +55,16 @@ export function getConversationTurnService(): ConversationTurnService {
   const env = getRuntimeEnv();
   const prisma = getPrisma();
   const intentClient = env.OPENAI_ENABLED && env.OPENAI_API_KEY
-    ? new OpenAIResponsesIntentClient(
-        new FetchOpenAIResponsesTransport(
-          env.OPENAI_API_KEY,
-          env.OPENAI_MAX_RETRIES,
-          env.OPENAI_TOTAL_DEADLINE_MS,
-        ),
-        env.OPENAI_MODEL,
-        env.OPENAI_TIMEOUT_MS,
-        env.OPENAI_MAX_OUTPUT_TOKENS,
-      )
+    ? new LazyNaturalLanguageIntentClient(() => new OpenAIResponsesIntentClient(
+      new FetchOpenAIResponsesTransport(
+        env.OPENAI_API_KEY!,
+        env.OPENAI_MAX_RETRIES,
+        env.OPENAI_TOTAL_DEADLINE_MS,
+      ),
+      env.OPENAI_MODEL,
+      env.OPENAI_TIMEOUT_MS,
+      env.OPENAI_MAX_OUTPUT_TOKENS,
+    ))
     : new UnavailableNaturalLanguageIntentClient();
   return new ConversationTurnService(
     new PrismaConversationStore(prisma),

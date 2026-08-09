@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   intentOutputJsonSchema,
+  LazyNaturalLanguageIntentClient,
   OpenAITransportError,
   OpenAIResponsesIntentClient,
   responsesApiPath,
@@ -21,6 +22,19 @@ const turn: NormalizedInboundTurn = {
 };
 
 describe("OpenAIResponsesIntentClient", () => {
+  it("does not construct the underlying transport client before interpretation", async () => {
+    const interpret = vi.fn(async () => ({
+      output: { intent: "HELP" as const, confidence: "HIGH" as const, explanationSegments: [{ type: "TEXT" as const, text: "Ajuda segura.", factKey: null }], suggestedActions: [] },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    }));
+    const factory = vi.fn(() => ({ interpret }));
+    const lazy = new LazyNaturalLanguageIntentClient(factory);
+    expect(factory).not.toHaveBeenCalled();
+    await lazy.interpret(turn);
+    expect(factory).toHaveBeenCalledOnce();
+    expect(interpret).toHaveBeenCalledOnce();
+  });
+
   it("builds a strict Responses API request without tools or canonical values", async () => {
     let capturedPath: string | undefined;
     let capturedRequest: ResponsesApiRequest | undefined;

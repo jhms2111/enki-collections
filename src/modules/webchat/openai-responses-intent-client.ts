@@ -60,6 +60,17 @@ export interface NaturalLanguageIntentClient {
   interpret(turn: NormalizedInboundTurn): Promise<IntentClientResult>;
 }
 
+export class LazyNaturalLanguageIntentClient implements NaturalLanguageIntentClient {
+  private client?: NaturalLanguageIntentClient;
+
+  constructor(private readonly factory: () => NaturalLanguageIntentClient) {}
+
+  interpret(turn: NormalizedInboundTurn): Promise<IntentClientResult> {
+    this.client ??= this.factory();
+    return this.client.interpret(turn);
+  }
+}
+
 export function buildOpenAIIntentRequest(
   turn: NormalizedInboundTurn,
   model: string,

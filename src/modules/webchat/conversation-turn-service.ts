@@ -46,6 +46,18 @@ export class ConversationTurnService {
     uiContext: ConversationUiContext;
   }): Promise<AiPublicResponse> {
     const conversation = await this.authenticate(input.publicReference, input.token);
+    const preModelTurn = this.orchestrator.handlePreModelGuard({
+      channel: "WEBCHAT",
+      message: input.message,
+      conversationState: conversation.state,
+      identityStatus: conversation.identityStatus,
+      uiContext: input.uiContext,
+      canonicalFacts: [],
+    });
+    if (preModelTurn) {
+      await this.recordSafeAudit(conversation, input.clientTurnId, preModelTurn);
+      return this.toPublicResponse(preModelTurn);
+    }
     if (!this.aiConfig.enabled) {
       return (await this.executeAndAudit(conversation, input, undefined, false)).response;
     }
