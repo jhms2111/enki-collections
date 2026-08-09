@@ -116,7 +116,9 @@ export class ConversationTurnService {
       outputTokens: turn.usage?.outputTokens ?? 0,
       actualCostMicrousd: turn.usage
         ? estimateOpenAiCostMicrousd(turn.usage.inputTokens, turn.usage.outputTokens)
-        : BigInt(0),
+        : turn.failureCategory === "UNKNOWN_OUTCOME"
+          ? reservationInput.reservedCostMicrousd
+          : BigInt(0),
       failureCategory: turn.failureCategory,
       circuitFailureThreshold: this.aiConfig.circuitFailureThreshold,
       circuitOpenSeconds: this.aiConfig.circuitOpenSeconds,

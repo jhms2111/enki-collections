@@ -22,7 +22,9 @@ describe("getRuntimeEnv", () => {
     expect(env.OPENAI_MAX_CALLS_PER_CONVERSATION).toBe(5);
     expect(env.OPENAI_DAILY_BUDGET_USD).toBe(0.5);
     expect(env.OPENAI_MONTHLY_BUDGET_USD).toBe(5);
-    expect(env.OPENAI_TIMEOUT_MS).toBe(2_500);
+    expect(env.OPENAI_TIMEOUT_MS).toBe(10_000);
+    expect(env.OPENAI_TOTAL_DEADLINE_MS).toBe(15_000);
+    expect(env.OPENAI_MAX_RETRIES).toBe(0);
     expect(env.OPENAI_MAX_OUTPUT_TOKENS).toBe(200);
   });
 
@@ -66,5 +68,9 @@ describe("getRuntimeEnv", () => {
       OPENAI_SAFETY_HMAC_SECRET: "s".repeat(64),
     });
     expect(env.OPENAI_ENABLED).toBe(true);
+  });
+
+  it("accepts the authorized 15 second total OpenAI deadline", () => {
+    expect(getRuntimeEnv({ ...validEnvironment, OPENAI_TOTAL_DEADLINE_MS: "15000" }).OPENAI_TOTAL_DEADLINE_MS).toBe(15_000);
   });
 });

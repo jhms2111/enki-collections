@@ -79,7 +79,7 @@ export class ConversationTurnOrchestrator {
     } catch (error) {
       return this.fallback(turn, "MODEL_UNAVAILABLE", {
         model: this.config.model,
-        failureCategory: error instanceof OpenAITransportError ? error.category : "INVALID_RESPONSE",
+        failureCategory: error instanceof OpenAITransportError ? error.category : "RESPONSE_PARSE_ERROR",
       });
     }
   }

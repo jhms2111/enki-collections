@@ -6,13 +6,17 @@ export type AiPublicResponse = Pick<
 >;
 
 export type AiFailureCategory =
+  | "INVALID_REQUEST"
+  | "MODEL_UNAVAILABLE"
   | "AUTHENTICATION"
   | "QUOTA"
   | "RATE_LIMIT"
   | "TIMEOUT"
   | "SERVER_ERROR"
   | "NETWORK"
-  | "INVALID_RESPONSE"
+  | "UNKNOWN_OUTCOME"
+  | "INVALID_STRUCTURED_OUTPUT"
+  | "RESPONSE_PARSE_ERROR"
   | "POLICY";
 
 export type AiReservationInput = Readonly<{

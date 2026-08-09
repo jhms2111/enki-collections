@@ -25,7 +25,7 @@ const runtimeEnvSchema = z.object({
   ),
   OPENAI_TIMEOUT_MS: z.preprocess(
     (value) => value === "" ? undefined : value,
-    z.coerce.number().int().min(500).max(10_000).default(2_500),
+    z.coerce.number().int().min(500).max(10_000).default(10_000),
   ),
   OPENAI_MAX_OUTPUT_TOKENS: z.preprocess(
     (value) => value === "" ? undefined : value,
@@ -45,11 +45,11 @@ const runtimeEnvSchema = z.object({
   ),
   OPENAI_MAX_RETRIES: z.preprocess(
     (value) => value === "" ? undefined : value,
-    z.coerce.number().int().min(0).max(1).default(1),
+    z.coerce.number().int().min(0).max(1).default(0),
   ),
   OPENAI_TOTAL_DEADLINE_MS: z.preprocess(
     (value) => value === "" ? undefined : value,
-    z.coerce.number().int().min(1_000).max(10_000).default(4_000),
+    z.coerce.number().int().min(1_000).max(30_000).default(15_000),
   ),
   OPENAI_MAX_CALLS_PER_CONVERSATION: z.preprocess(
     (value) => value === "" ? undefined : value,
@@ -90,6 +90,9 @@ const runtimeEnvSchema = z.object({
   }
   if (env.OPENAI_DAILY_BUDGET_USD > env.OPENAI_MONTHLY_BUDGET_USD) {
     context.addIssue({ code: "custom", path: ["OPENAI_DAILY_BUDGET_USD"], message: "O orçamento diário não pode superar o mensal." });
+  }
+  if (env.OPENAI_TIMEOUT_MS >= env.OPENAI_TOTAL_DEADLINE_MS) {
+    context.addIssue({ code: "custom", path: ["OPENAI_TOTAL_DEADLINE_MS"], message: "O prazo total deve ser maior que o timeout de uma tentativa." });
   }
 });
 

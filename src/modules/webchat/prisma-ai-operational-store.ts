@@ -25,6 +25,26 @@ export function shouldOpenAiCircuit(
   return category === "AUTHENTICATION" || category === "QUOTA" || consecutiveFailures >= threshold;
 }
 
+export function aiCircuitCompletionAction(
+  category: string | undefined,
+  providerCallMade = true,
+): "RESET" | "FAILURE" | "UNCHANGED" {
+  if (!providerCallMade) return "UNCHANGED";
+  if (!category || category === "POLICY") return "RESET";
+  return [
+    "RATE_LIMIT",
+    "TIMEOUT",
+    "SERVER_ERROR",
+    "NETWORK",
+    "UNKNOWN_OUTCOME",
+    "AUTHENTICATION",
+    "QUOTA",
+    "MODEL_UNAVAILABLE",
+    "RESPONSE_PARSE_ERROR",
+    "INVALID_STRUCTURED_OUTPUT",
+  ].includes(category) ? "FAILURE" : "UNCHANGED";
+}
+
 export class PrismaAiOperationalStore implements AiOperationalStore {
   constructor(private readonly client: PrismaClient) {}
 
@@ -86,18 +106,20 @@ export class PrismaAiOperationalStore implements AiOperationalStore {
         },
       });
 
-      if (!input.failureCategory) {
+      const circuitAction = aiCircuitCompletionAction(input.failureCategory);
+      if (circuitAction === "RESET") {
         await tx.aiCircuitBreaker.update({
           where: { organizationId: input.organizationId },
           data: { state: "CLOSED", consecutiveFailures: 0, openUntil: null, halfOpenProbeInFlight: false, lastFailureCategory: null },
         });
-      } else if (["RATE_LIMIT", "TIMEOUT", "SERVER_ERROR", "NETWORK", "AUTHENTICATION", "QUOTA"].includes(input.failureCategory)) {
+      } else if (circuitAction === "FAILURE") {
+        const failureCategory = input.failureCategory!;
         const circuit = await tx.aiCircuitBreaker.update({
           where: { organizationId: input.organizationId },
-          data: { consecutiveFailures: { increment: 1 }, lastFailureCategory: input.failureCategory, halfOpenProbeInFlight: false },
+          data: { consecutiveFailures: { increment: 1 }, lastFailureCategory: failureCategory, halfOpenProbeInFlight: false },
           select: { consecutiveFailures: true },
         });
-        if (shouldOpenAiCircuit(input.failureCategory, circuit.consecutiveFailures, input.circuitFailureThreshold)) {
+        if (shouldOpenAiCircuit(failureCategory, circuit.consecutiveFailures, input.circuitFailureThreshold)) {
           await tx.aiCircuitBreaker.update({
             where: { organizationId: input.organizationId },
             data: { state: "OPEN", openUntil: new Date(input.now.getTime() + input.circuitOpenSeconds * 1_000) },

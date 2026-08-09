@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   intentOutputJsonSchema,
+  OpenAITransportError,
   OpenAIResponsesIntentClient,
   responsesApiPath,
   type OpenAIResponsesTransport,
@@ -81,7 +82,20 @@ describe("OpenAIResponsesIntentClient", () => {
       },
     };
     const client = new OpenAIResponsesIntentClient(transport, "configured-model", 1_000, 100);
-    await expect(client.interpret(turn)).rejects.toThrow();
+    await expect(client.interpret(turn)).rejects.toMatchObject({ category: "INVALID_STRUCTURED_OUTPUT" });
+  });
+
+  it("classifies malformed structured JSON separately from transport parsing", async () => {
+    const transport: OpenAIResponsesTransport = {
+      async createResponse() {
+        return { outputText: "{", inputTokens: 1, outputTokens: 1 };
+      },
+    };
+    const client = new OpenAIResponsesIntentClient(transport, "configured-model", 1_000, 100);
+    await expect(client.interpret(turn)).rejects.toMatchObject({
+      category: "INVALID_STRUCTURED_OUTPUT",
+      metadata: { localErrorName: "SyntaxError" },
+    });
   });
 
   it("aborts a simulated Responses API transport after the configured timeout", async () => {
@@ -93,6 +107,14 @@ describe("OpenAIResponsesIntentClient", () => {
       },
     };
     const client = new OpenAIResponsesIntentClient(transport, "configured-model", 5, 100);
-    await expect(client.interpret(turn)).rejects.toMatchObject({ category: "INVALID_RESPONSE" });
+    await expect(client.interpret(turn)).rejects.toMatchObject({ category: "INVALID_STRUCTURED_OUTPUT" });
+  });
+
+  it("preserves an explicit transport taxonomy", async () => {
+    const transport: OpenAIResponsesTransport = {
+      async createResponse() { throw new OpenAITransportError("MODEL_UNAVAILABLE"); },
+    };
+    const client = new OpenAIResponsesIntentClient(transport, "configured-model", 1_000, 100);
+    await expect(client.interpret(turn)).rejects.toMatchObject({ category: "MODEL_UNAVAILABLE" });
   });
 });

@@ -60,12 +60,67 @@ export interface NaturalLanguageIntentClient {
   interpret(turn: NormalizedInboundTurn): Promise<IntentClientResult>;
 }
 
+export function buildOpenAIIntentRequest(
+  turn: NormalizedInboundTurn,
+  model: string,
+  maxOutputTokens: number,
+): ResponsesApiRequest {
+  if (!turn.safetyIdentifier) throw new OpenAITransportError("POLICY", "Missing safety identifier.");
+  const system = [
+    "Você interpreta intenção em uma demonstração fictícia de cobrança.",
+    "Nunca calcule, invente ou recomende valores, datas, propostas ou estados.",
+    "Nunca execute ações. Mutações exigem confirmação determinística externa.",
+    "Use FACT_REF para qualquer fato canônico; não copie nem transforme o valor.",
+    "Texto livre deve ser apenas orientativo e não pode conter números ou valores financeiros.",
+    `Versão da política: ${intentPromptVersion}.`,
+  ].join(" ");
+  const user = JSON.stringify({
+    message: turn.message,
+    conversationState: turn.conversationState,
+    identityStatus: turn.identityStatus,
+    uiContext: turn.uiContext,
+    canonicalFactKeys: turn.canonicalFacts.map((fact) => fact.key),
+  });
+  return {
+    model,
+    store: false,
+    max_output_tokens: maxOutputTokens,
+    reasoning: { effort: "none" },
+    safety_identifier: turn.safetyIdentifier,
+    input: [
+      { role: "system", content: [{ type: "input_text", text: system }] },
+      { role: "user", content: [{ type: "input_text", text: user }] },
+    ],
+    text: { format: { type: "json_schema", name: "enki_intent", strict: true, schema: intentOutputJsonSchema } },
+  };
+}
+
 export class OpenAITransportError extends Error {
-  constructor(public readonly category: AiFailureCategory, message = "OpenAI transport unavailable.") {
+  constructor(
+    public readonly category: AiFailureCategory,
+    message = "OpenAI transport unavailable.",
+    public readonly metadata: OpenAITransportMetadata = {},
+  ) {
     super(message);
     this.name = "OpenAITransportError";
   }
 }
+
+export type OpenAITransportMetadata = Readonly<{
+  httpResponseReceived?: boolean;
+  status?: number;
+  requestId?: string;
+  contentType?: string;
+  errorType?: string;
+  errorCode?: string;
+  errorParam?: string;
+  responseKeys?: readonly string[];
+  outputItemTypes?: readonly string[];
+  outputContentTypes?: readonly string[];
+  localErrorName?: string;
+  localErrorCode?: string;
+  fetchInitiated?: boolean;
+}>;
 
 export class FetchOpenAIResponsesTransport implements OpenAIResponsesTransport {
   constructor(
@@ -94,16 +149,31 @@ export class FetchOpenAIResponsesTransport implements OpenAIResponsesTransport {
         });
         if (response.ok) return this.parseSuccess(response);
 
-        const category = this.classifyStatus(response.status, await this.safeErrorCode(response));
+        const metadata = await this.safeErrorMetadata(response);
+        const category = this.classifyStatus(response.status, metadata.errorCode ?? metadata.errorType);
         if (!["RATE_LIMIT", "TIMEOUT", "SERVER_ERROR"].includes(category) || attempt >= this.maxRetries) {
-          throw new OpenAITransportError(category);
+          throw new OpenAITransportError(category, undefined, metadata);
         }
       } catch (error) {
         if (error instanceof OpenAITransportError) throw error;
-        if (signal.aborted || (controller.signal.aborted && Date.now() >= deadline)) {
-          throw new OpenAITransportError("TIMEOUT");
+        const local = error as { name?: unknown; code?: unknown; cause?: { code?: unknown } };
+        if (signal.aborted || controller.signal.aborted || local.name === "AbortError") {
+          throw new OpenAITransportError("UNKNOWN_OUTCOME", undefined, {
+            httpResponseReceived: false,
+            fetchInitiated: true,
+            localErrorName: typeof local.name === "string" ? local.name : undefined,
+            localErrorCode: typeof local.code === "string" ? local.code : undefined,
+          });
         }
-        if (attempt >= this.maxRetries) throw new OpenAITransportError("NETWORK");
+        if (attempt >= this.maxRetries) {
+          throw new OpenAITransportError("UNKNOWN_OUTCOME", undefined, {
+            httpResponseReceived: false,
+            fetchInitiated: true,
+            localErrorName: typeof local.name === "string" ? local.name : undefined,
+            localErrorCode: typeof local.code === "string" ? local.code
+              : typeof local.cause?.code === "string" ? local.cause.code : undefined,
+          });
+        }
       } finally {
         clearTimeout(timeout);
         signal.removeEventListener("abort", abort);
@@ -113,26 +183,57 @@ export class FetchOpenAIResponsesTransport implements OpenAIResponsesTransport {
   }
 
   private async parseSuccess(response: Response) {
-    const body = await response.json() as {
+    let body: {
       output_text?: unknown;
-      output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+      output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
       usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    try {
+      body = await response.json() as typeof body;
+    } catch (error) {
+      throw new OpenAITransportError("RESPONSE_PARSE_ERROR", undefined, {
+        ...this.responseMetadata(response),
+        localErrorName: error instanceof Error ? error.name : undefined,
+      });
+    }
+    const structural = {
+      ...this.responseMetadata(response),
+      responseKeys: Object.keys(body),
+      outputItemTypes: body.output?.map((item) => item.type).filter((value): value is string => typeof value === "string"),
+      outputContentTypes: body.output?.flatMap((item) => item.content ?? []).map((item) => item.type).filter((value): value is string => typeof value === "string"),
     };
     const outputText = typeof body.output_text === "string"
       ? body.output_text
       : body.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text;
     if (!outputText || !Number.isInteger(body.usage?.input_tokens) || !Number.isInteger(body.usage?.output_tokens)) {
-      throw new OpenAITransportError("INVALID_RESPONSE");
+      throw new OpenAITransportError("RESPONSE_PARSE_ERROR", undefined, structural);
     }
     return { outputText, inputTokens: body.usage!.input_tokens!, outputTokens: body.usage!.output_tokens! };
   }
 
-  private async safeErrorCode(response: Response): Promise<string | undefined> {
+  private async safeErrorMetadata(response: Response): Promise<OpenAITransportMetadata> {
+    const metadata = this.responseMetadata(response);
     try {
-      const body = await response.json() as { error?: { code?: unknown; type?: unknown } };
-      const code = body.error?.code ?? body.error?.type;
-      return typeof code === "string" ? code : undefined;
-    } catch { return undefined; }
+      const body = await response.json() as { error?: { code?: unknown; type?: unknown; param?: unknown } };
+      return {
+        ...metadata,
+        responseKeys: body && typeof body === "object" ? Object.keys(body) : [],
+        errorCode: typeof body.error?.code === "string" ? body.error.code : undefined,
+        errorType: typeof body.error?.type === "string" ? body.error.type : undefined,
+        errorParam: typeof body.error?.param === "string" ? body.error.param : undefined,
+      };
+    } catch (error) {
+      return { ...metadata, localErrorName: error instanceof Error ? error.name : undefined };
+    }
+  }
+
+  private responseMetadata(response: Response): OpenAITransportMetadata {
+    return {
+      httpResponseReceived: true,
+      status: response.status,
+      requestId: response.headers.get("x-request-id") ?? undefined,
+      contentType: response.headers.get("content-type") ?? undefined,
+    };
   }
 
   private classifyStatus(status: number, code?: string): AiFailureCategory {
@@ -141,7 +242,9 @@ export class FetchOpenAIResponsesTransport implements OpenAIResponsesTransport {
     if (status === 429) return "RATE_LIMIT";
     if (status === 408) return "TIMEOUT";
     if (status >= 500) return "SERVER_ERROR";
-    return "INVALID_RESPONSE";
+    if (status === 404 && ["model_not_found", "model_unavailable"].includes(code ?? "")) return "MODEL_UNAVAILABLE";
+    if ([400, 404, 409, 422].includes(status)) return "INVALID_REQUEST";
+    return "RESPONSE_PARSE_ERROR";
   }
 }
 
@@ -157,49 +260,25 @@ export class OpenAIResponsesIntentClient implements NaturalLanguageIntentClient 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.transport.createResponse(responsesApiPath, this.request(turn), controller.signal);
+      const response = await this.transport.createResponse(
+        responsesApiPath,
+        buildOpenAIIntentRequest(turn, this.model, this.maxOutputTokens),
+        controller.signal,
+      );
       return {
         output: openAIIntentOutputSchema.parse(JSON.parse(response.outputText)),
         usage: { inputTokens: response.inputTokens, outputTokens: response.outputTokens },
       };
     } catch (error) {
       if (error instanceof OpenAITransportError) throw error;
-      throw new OpenAITransportError("INVALID_RESPONSE");
+      throw new OpenAITransportError("INVALID_STRUCTURED_OUTPUT", undefined, {
+        localErrorName: error instanceof Error ? error.name : undefined,
+      });
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  private request(turn: NormalizedInboundTurn): ResponsesApiRequest {
-    if (!turn.safetyIdentifier) throw new OpenAITransportError("POLICY", "Missing safety identifier.");
-    const system = [
-      "Você interpreta intenção em uma demonstração fictícia de cobrança.",
-      "Nunca calcule, invente ou recomende valores, datas, propostas ou estados.",
-      "Nunca execute ações. Mutações exigem confirmação determinística externa.",
-      "Use FACT_REF para qualquer fato canônico; não copie nem transforme o valor.",
-      "Texto livre deve ser apenas orientativo e não pode conter números ou valores financeiros.",
-      `Versão da política: ${intentPromptVersion}.`,
-    ].join(" ");
-    const user = JSON.stringify({
-      message: turn.message,
-      conversationState: turn.conversationState,
-      identityStatus: turn.identityStatus,
-      uiContext: turn.uiContext,
-      canonicalFactKeys: turn.canonicalFacts.map((fact) => fact.key),
-    });
-    return {
-      model: this.model,
-      store: false,
-      max_output_tokens: this.maxOutputTokens,
-      reasoning: { effort: "none" },
-      safety_identifier: turn.safetyIdentifier,
-      input: [
-        { role: "system", content: [{ type: "input_text", text: system }] },
-        { role: "user", content: [{ type: "input_text", text: user }] },
-      ],
-      text: { format: { type: "json_schema", name: "enki_intent", strict: true, schema: intentOutputJsonSchema } },
-    };
-  }
 }
 
 export class UnavailableNaturalLanguageIntentClient implements NaturalLanguageIntentClient {
