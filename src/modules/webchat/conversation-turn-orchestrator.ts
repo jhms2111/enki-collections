@@ -18,6 +18,11 @@ const mutatingIntents = new Set<ConversationalIntent>([
 
 const forbiddenFreeText = /(?:\d|R\$|reais?|centavos?|desconto|juros|multa|melhor proposta|quita(?:ção|do)|processo judicial|penhora)/iu;
 const sensitiveInput = /(?:\b\d{3}[.-]?\d{3}[.-]?\d{3}-?\d{2}\b|\b\d{10,19}\b|[\w.+-]+@[\w.-]+\.[a-z]{2,})/iu;
+const restrictedNegotiationRequest = /(?:melhor\s+proposta|recomende\s+(?:uma\s+)?proposta|desconto|\b\d+(?:[.,]\d+)?\s*%|(?:mude|mudar|altere|alterar|troque|reduza|aumente).{0,40}(?:valor|entrada|parcela|prazo|vencimento|termos?|condi[cç][oõ]es?))/iu;
+const promptInjectionRequest = /(?:ignore|desconsidere|esque[cç]a).{0,40}(?:regras?|instru[cç][oõ]es?|pol[ií]tica|sistema)|(?:marque|considere).{0,30}(?:d[ií]vida|pagamento).{0,20}(?:paga|pago|quitad[ao])/iu;
+
+export const restrictedNegotiationTemplate = "Não posso criar, calcular ou recomendar condições diferentes. Posso apresentar as propostas previamente autorizadas disponíveis.";
+export const promptInjectionTemplate = "Não posso ignorar as regras da demonstração nem alterar estados por texto livre. Use somente as opções seguras exibidas.";
 
 export interface AiUsageBudgetGate {
   allowRequest(): Promise<boolean>;
@@ -55,6 +60,17 @@ export class ConversationTurnOrchestrator {
         return this.fallback(turn, "LOW_CONFIDENCE", { model: this.config.model, usage: result.usage });
       }
       const allowed = this.allowedIntents(turn);
+      if (promptInjectionRequest.test(turn.message)) {
+        await this.budget.recordUsage(result.usage);
+        return this.controlledPolicyFallback("UNKNOWN", promptInjectionTemplate, [], result.usage, "PROMPT_INJECTION_BLOCKED");
+      }
+      if (restrictedNegotiationRequest.test(turn.message)) {
+        await this.budget.recordUsage(result.usage);
+        if (!allowed.has("LIST_OFFERS")) {
+          return this.fallback(turn, "INTENT_NOT_ALLOWED", { model: this.config.model, usage: result.usage, failureCategory: "POLICY" });
+        }
+        return this.controlledPolicyFallback("LIST_OFFERS", restrictedNegotiationTemplate, ["LIST_OFFERS"], result.usage, "RESTRICTED_NEGOTIATION_REQUEST");
+      }
       if (!allowed.has(result.output.intent)) {
         return this.fallback(turn, "INTENT_NOT_ALLOWED", { model: this.config.model, usage: result.usage, failureCategory: "POLICY" });
       }
@@ -82,6 +98,27 @@ export class ConversationTurnOrchestrator {
         failureCategory: error instanceof OpenAITransportError ? error.category : "RESPONSE_PARSE_ERROR",
       });
     }
+  }
+
+  private controlledPolicyFallback(
+    intent: ConversationalIntent,
+    message: string,
+    suggestedActions: readonly ConversationalIntent[],
+    usage: Readonly<{ inputTokens: number; outputTokens: number }>,
+    reason: string,
+  ): BotTurn {
+    return {
+      intent,
+      message,
+      suggestedActions,
+      requiresConfirmation: false,
+      fallbackUsed: true,
+      fallbackReason: reason,
+      model: this.config.model,
+      promptVersion: intentPromptVersion,
+      usage,
+      failureCategory: "POLICY",
+    };
   }
 
   handleDeterministic(turn: NormalizedInboundTurn, reason = "FREE_FALLBACK"): BotTurn {
