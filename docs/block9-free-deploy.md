@@ -19,11 +19,6 @@ Configurar somente em Production, sem prefixo `NEXT_PUBLIC_`:
 - `DATABASE_URL`
 - `CONVERSATION_SESSION_SECRET`
 - `IDEMPOTENCY_HMAC_SECRET`
-- `DEMO_ACCESS_CODE_HASH`
-- `DEMO_ACCESS_HMAC_SECRET`
-- `DEMO_ACCESS_MAX_ATTEMPTS`
-- `DEMO_ACCESS_WINDOW_SECONDS`
-- `DEMO_ACCESS_COOKIE_MAX_AGE_SECONDS`
 - `DEMO_VERSION`
 - `APP_URL` após conhecer a URL definitiva
 
@@ -34,9 +29,8 @@ deliberadamente inválida apenas durante `prisma generate` quando `DIRECT_URL`
 não está presente. Migrações exigem `DIRECT_URL` real no ambiente local
 controlado.
 
-Os dois segredos HMAC e o segredo de sessão devem ser independentes, aleatórios
-e ter pelo menos 48 bytes. O código e seu hash nunca entram no Git, logs, URL ou
-bundle. O hash é calculado localmente com `hashDemoAccessCode`.
+Os segredos de idempotência, IA e sessão devem ser independentes, aleatórios e
+ter pelo menos 48 bytes. Nenhum segredo entra no Git, logs, URL ou bundle.
 
 ## Migração e seed
 
@@ -63,9 +57,8 @@ Na Fase 2, criar no máximo uma regra de rate limiting:
 - revisar que o painel não habilitou cobrança ou add-on;
 - cancelar a configuração se houver qualquer solicitação de pagamento.
 
-O cookie assinado limita o código a cinco falhas por janela no navegador. Ele
-não substitui o WAF, porque cookies podem ser removidos. A regra por IP é a
-camada definitiva contra repetição automatizada dentro dos recursos gratuitos.
+A regra por IP complementa os limites determinísticos de criação de conversas e
+de interpretação. Ela permanece necessária mesmo com a demonstração aberta.
 
 ## Deploy
 
@@ -86,13 +79,13 @@ Preview não deve receber variáveis do banco de produção automaticamente.
 
 1. `GET /api/health` responde 200 sem exigir código.
 2. `/robots.txt` contém `Disallow: /`.
-3. `/demo/jf-demo` redireciona para `/demo-access`.
-4. APIs protegidas sem cookie retornam 401.
+3. `/demo/jf-demo` e `/demo/jf-demo/chat` abrem diretamente.
+4. APIs de conversa protegidas sem o cookie da conversa retornam 401.
 5. mutação sem `Origin` ou com origem divergente retorna 403.
-6. código incorreto reduz tentativas sem aparecer em logs.
-7. quinta falha retorna 429 e `Retry-After`.
-8. código correto cria cookie HttpOnly, Secure e SameSite=Lax.
-9. o fluxo fictício completo funciona após autenticação.
+6. a criação de conversa continua sujeita aos limites configurados.
+7. o cookie da conversa é HttpOnly, Secure e SameSite=Lax.
+8. `/internal` e `/api/v1/internal/*` continuam exigindo autenticação interna.
+9. o fluxo fictício completo funciona após validação simulada de identidade.
 10. desafio público não contém resposta correta ou referência interna.
 11. instrumento permanece textual e não pagável.
 12. respostas de demo e API contêm `Cache-Control: no-store`.
@@ -105,7 +98,7 @@ Preview não deve receber variáveis do banco de produção automaticamente.
 Permitir apenas nome seguro do erro, status, rota normalizada, duração,
 `requestId` e versão. Nunca registrar:
 
-- código de acesso ou hash;
+- segredos ou hashes de autenticação;
 - cookies e tokens;
 - idempotency key;
 - identificadores e desafios;

@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  decodeDemoAccessState,
-  demoAccessCookieName,
-  getDemoAccessEnv,
-} from "@/shared/auth/demo-access";
 import { internalSessionCookieName } from "@/shared/auth/internal-access";
 
-const accessPage = "/demo-access";
-const accessApi = "/api/v1/demo-access/authenticate";
 const internalAccessPage = "/internal-access";
 const internalAccessApi = "/api/v1/internal/authenticate";
 const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -54,37 +47,8 @@ export async function proxy(request: NextRequest) {
     response.headers.set("Cache-Control", internalHtmlCacheControl);
     return response;
   }
-  if (pathname === accessPage || pathname === accessApi) {
-    return NextResponse.next();
-  }
 
-  let env;
-  try {
-    env = getDemoAccessEnv();
-  } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: "DEMO_UNAVAILABLE",
-          message: "A demonstração está temporariamente indisponível.",
-        },
-      },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
-  }
-  const state = decodeDemoAccessState(
-    request.cookies.get(demoAccessCookieName)?.value,
-    env.DEMO_ACCESS_HMAC_SECRET,
-    new Date(),
-  );
-  if (state?.authorized) return NextResponse.next();
-
-  if (pathname.startsWith("/api/")) {
-    return securityFailure("DEMO_ACCESS_REQUIRED", 401);
-  }
-  const target = new URL(accessPage, request.url);
-  target.searchParams.set("returnTo", pathname);
-  return NextResponse.redirect(target);
+  return NextResponse.next();
 }
 
 export const config = {

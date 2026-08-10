@@ -1,10 +1,8 @@
-import { DemoAccessForm } from "@/modules/demo-ui/demo-access-form";
+import { permanentRedirect } from "next/navigation";
 
-export default async function DemoAccessPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ returnTo?: string }>;
-}) {
-  const { returnTo } = await searchParams;
-  return <DemoAccessForm returnTo={returnTo ?? "/demo/jf-demo"} />;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default function DemoAccessPage() {
+  permanentRedirect("/demo/jf-demo");
 }

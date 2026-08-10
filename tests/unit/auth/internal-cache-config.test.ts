@@ -12,4 +12,20 @@ describe("internal HTML cache configuration", () => {
     }
     expect(rules?.find((rule) => rule.source.includes("_next/static"))).toBeUndefined();
   });
+
+  it("mantém no-store na demonstração e os headers globais de segurança e indexação", async () => {
+    const rules = await nextConfig.headers?.();
+    expect(rules?.find((rule) => rule.source === "/demo/:path*")?.headers).toContainEqual({
+      key: "Cache-Control",
+      value: "no-store, max-age=0",
+    });
+    const globalHeaders = rules?.find((rule) => rule.source === "/(.*)")?.headers ?? [];
+    expect(globalHeaders).toContainEqual({
+      key: "X-Robots-Tag",
+      value: "noindex, nofollow, noarchive, nosnippet",
+    });
+    expect(globalHeaders).toContainEqual({ key: "X-Frame-Options", value: "DENY" });
+    expect(globalHeaders).toContainEqual({ key: "X-Content-Type-Options", value: "nosniff" });
+    expect(globalHeaders.some((header) => header.key === "Content-Security-Policy")).toBe(true);
+  });
 });
