@@ -50,6 +50,7 @@ export type BotTurn = Readonly<{
   promptVersion?: string;
   usage?: Readonly<{ inputTokens: number; outputTokens: number }>;
   failureCategory?: import("./ai-operational-store").AiFailureCategory;
+  storageMessage?: string;
 }>;
 
 export interface ConversationChannelAdapter<TInput> {

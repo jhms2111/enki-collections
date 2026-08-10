@@ -89,12 +89,14 @@ describe("ConversationTurnOrchestrator", () => {
   it("inserts canonical facts exactly and never reconstructs them", async () => {
     const { orchestrator, budget } = setup(result({
       explanationSegments: [
-        { type: "TEXT", text: "O total canônico informado é", factKey: null },
+        { type: "TEXT", text: "O total informado é", factKey: null },
         { type: "FACT_REF", text: null, factKey: "fact_total" },
       ],
     }));
     const turn = await orchestrator.handle(baseTurn);
-    expect(turn.message).toBe("O total canônico informado é R$ 123,45");
+    expect(turn.message).toBe("O total informado é R$ 123,45");
+    expect(turn.storageMessage).toBe("O total informado é [[FACT:fact_total]]");
+    expect(turn.storageMessage).not.toContain("123,45");
     expect(turn.fallbackUsed).toBe(false);
     expect(budget.recorded).toEqual([{ inputTokens: 40, outputTokens: 12 }]);
   });

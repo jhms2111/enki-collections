@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { conversationalIntents } from "./conversation-turn.types";
+import { providerReferenceSchema } from "@/modules/conversations/debt.schemas";
 
 export const conversationTurnRequestSchema = z
   .object({
@@ -13,8 +14,19 @@ export const conversationTurnRequestSchema = z
       "OFFER_REVIEW",
       "ACCEPTED",
     ]),
+    selectedDebtRef: providerReferenceSchema.optional(),
+    selectedOfferRef: providerReferenceSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.selectedOfferRef && !value.selectedDebtRef) {
+      context.addIssue({
+        code: "custom",
+        path: ["selectedOfferRef"],
+        message: "A proposta exige uma dívida selecionada.",
+      });
+    }
+  });
 
 export const conversationTurnPublicResponseSchema = z
   .object({

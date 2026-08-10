@@ -6,6 +6,25 @@ import {
 } from "@/modules/webchat/conversation-turn.schemas";
 
 describe("conversation turn schemas", () => {
+  it("accepts only optional opaque debt and offer context references", () => {
+    const parsed = conversationTurnRequestSchema.parse({
+      message: "Explique esta proposta",
+      clientTurnId: "00000000-0000-4000-8000-000000000010",
+      uiContext: "OFFER_REVIEW",
+      selectedDebtRef: "debt_opaque",
+      selectedOfferRef: "offer_opaque",
+    });
+    expect(parsed.selectedDebtRef).toBe("debt_opaque");
+    expect(parsed.selectedOfferRef).toBe("offer_opaque");
+    expect(() => conversationTurnRequestSchema.parse({
+      ...parsed,
+      selectedDebtRef: undefined,
+    })).toThrow();
+    expect(() => conversationTurnRequestSchema.parse({
+      ...parsed,
+      amount: 100,
+    })).toThrow();
+  });
   it("accepts only the bounded public request", () => {
     const request = {
       message: "Quero ajuda",

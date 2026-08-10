@@ -119,6 +119,8 @@ export function interpretConversationTurn(input: {
   message: string;
   clientTurnId: string;
   uiContext: "IDENTITY" | "DEBT_LIST" | "DEBT_DETAIL" | "OFFER_REVIEW" | "ACCEPTED";
+  selectedDebtRef?: string;
+  selectedOfferRef?: string;
 }) {
   return requestJson<{
     turn: {
@@ -136,6 +138,8 @@ export function interpretConversationTurn(input: {
         message: input.message,
         clientTurnId: input.clientTurnId,
         uiContext: input.uiContext,
+        ...(input.selectedDebtRef ? { selectedDebtRef: input.selectedDebtRef } : {}),
+        ...(input.selectedOfferRef ? { selectedOfferRef: input.selectedOfferRef } : {}),
       }),
     },
   );

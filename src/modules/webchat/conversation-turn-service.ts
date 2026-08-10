@@ -1,5 +1,7 @@
 import type { ConversationStore } from "@/modules/conversations/conversation-store";
+import { verifiedDebtorContextSchema } from "@/modules/conversations/debt.schemas";
 import type { PersistedConversation } from "@/modules/conversations/persistence.types";
+import type { DebtProvider } from "@/modules/debt-provider/debt-provider";
 import { hashSessionToken } from "@/shared/auth/session-token";
 import { ApplicationError } from "@/shared/errors/application-error";
 
@@ -7,6 +9,8 @@ import { deriveAiOperationalIdentity, estimateOpenAiCostMicrousd, fingerprintAiT
 import type { AiOperationalStore, AiPublicResponse, AiReservationResult } from "./ai-operational-store";
 import type { ConversationUiContext } from "./conversation-turn.types";
 import { ConversationTurnOrchestrator } from "./conversation-turn-orchestrator";
+import { buildDebtCanonicalFacts, buildOfferCanonicalFacts } from "./canonical-turn-context";
+import type { CanonicalFact } from "./conversation-turn.types";
 
 type AiRuntimeConfig = Readonly<{
   enabled: boolean;
@@ -36,6 +40,7 @@ export class ConversationTurnService {
       circuitFailureThreshold: 5, circuitOpenSeconds: 60,
       reservationTtlMs: 10_000,
     },
+    private readonly debtProvider?: DebtProvider,
   ) {}
 
   async interpret(input: {
@@ -44,25 +49,41 @@ export class ConversationTurnService {
     message: string;
     clientTurnId: string;
     uiContext: ConversationUiContext;
+    requestId?: string;
+    selectedDebtRef?: string;
+    selectedOfferRef?: string;
   }): Promise<AiPublicResponse> {
     const conversation = await this.authenticate(input.publicReference, input.token);
+    const canonicalFacts = await this.loadCanonicalFacts(conversation, input);
+    if (input.selectedDebtRef && !input.selectedOfferRef && this.requestsOfferExplanation(input.message)) {
+      const turn = {
+        intent: "LIST_OFFERS" as const,
+        message: "Selecione uma proposta para que eu possa explicar as condições.",
+        suggestedActions: ["LIST_OFFERS" as const],
+        requiresConfirmation: false,
+        fallbackUsed: true,
+        fallbackReason: "OFFER_CONTEXT_REQUIRED",
+      };
+      await this.recordSafeAudit(conversation, input.clientTurnId, turn);
+      return this.toPublicResponse(turn);
+    }
     const preModelTurn = this.orchestrator.handlePreModelGuard({
       channel: "WEBCHAT",
       message: input.message,
       conversationState: conversation.state,
       identityStatus: conversation.identityStatus,
       uiContext: input.uiContext,
-      canonicalFacts: [],
+      canonicalFacts,
     });
     if (preModelTurn) {
       await this.recordSafeAudit(conversation, input.clientTurnId, preModelTurn);
       return this.toPublicResponse(preModelTurn);
     }
     if (!this.aiConfig.enabled) {
-      return (await this.executeAndAudit(conversation, input, undefined, false)).response;
+      return (await this.executeAndAudit(conversation, input, canonicalFacts, undefined, false)).response;
     }
     if (!this.aiStore || !this.aiConfig.safetyHmacSecret) {
-      return (await this.executeAndAudit(conversation, input, undefined, true)).response;
+      return (await this.executeAndAudit(conversation, input, canonicalFacts, undefined, true)).response;
     }
 
     const identity = deriveAiOperationalIdentity({
@@ -76,6 +97,8 @@ export class ConversationTurnService {
       uiContext: input.uiContext,
       conversationState: conversation.state,
       identityStatus: conversation.identityStatus,
+      selectedDebtRef: input.selectedDebtRef ?? null,
+      selectedOfferRef: input.selectedOfferRef ?? null,
     });
     const deterministicFallback = this.orchestrator.handleDeterministic({
       channel: "WEBCHAT",
@@ -83,7 +106,7 @@ export class ConversationTurnService {
       conversationState: conversation.state,
       identityStatus: conversation.identityStatus,
       uiContext: input.uiContext,
-      canonicalFacts: [],
+      canonicalFacts,
     }, "AI_OPERATIONAL_FALLBACK");
     const reservationInput = {
       organizationId: conversation.organizationId,
@@ -103,12 +126,14 @@ export class ConversationTurnService {
 
     let reservation = await this.aiStore.reserve(reservationInput);
     if (reservation.kind === "IN_PROGRESS") reservation = await this.waitForReplay(reservationInput);
-    if (reservation.kind === "REPLAY") return reservation.response;
+    if (reservation.kind === "REPLAY") {
+      return this.hydrateStoredResponse(reservation.response, canonicalFacts);
+    }
     if (reservation.kind === "IN_PROGRESS") {
       throw new ApplicationError("AI_TURN_IN_PROGRESS", "Este turno ainda está sendo processado.", 409);
     }
     if (reservation.kind !== "RESERVED") {
-      const executed = await this.executeAndAudit(conversation, input, undefined, true, false);
+      const executed = await this.executeAndAudit(conversation, input, canonicalFacts, undefined, true, false);
       return this.aiStore.finalizeWithoutCall({
         reservation: reservationInput,
         response: executed.response,
@@ -117,12 +142,12 @@ export class ConversationTurnService {
       });
     }
 
-    const executed = await this.executeAndAudit(conversation, input, identity.safetyIdentifier, false, true);
+    const executed = await this.executeAndAudit(conversation, input, canonicalFacts, identity.safetyIdentifier, false, true);
     const { response, turn } = executed;
     await this.completeWithRetry({
       executionId: reservation.executionId,
       organizationId: conversation.organizationId,
-      response,
+      response: this.toStoredResponse(turn),
       model: turn.model,
       inputTokens: turn.usage?.inputTokens ?? 0,
       outputTokens: turn.usage?.outputTokens ?? 0,
@@ -156,6 +181,7 @@ export class ConversationTurnService {
   private async executeAndAudit(
     conversation: PersistedConversation,
     input: { message: string; clientTurnId: string; uiContext: ConversationUiContext },
+    canonicalFacts: readonly CanonicalFact[],
     safetyIdentifier: string | undefined,
     deterministic: boolean,
     deferAudit = false,
@@ -166,7 +192,7 @@ export class ConversationTurnService {
       conversationState: conversation.state,
       identityStatus: conversation.identityStatus,
       uiContext: input.uiContext,
-      canonicalFacts: [],
+      canonicalFacts,
       safetyIdentifier,
     } as const;
     const turn = deterministic
@@ -185,6 +211,42 @@ export class ConversationTurnService {
       requiresConfirmation: turn.requiresConfirmation,
       fallbackUsed: turn.fallbackUsed,
     };
+  }
+
+  private toStoredResponse(
+    turn: Awaited<ReturnType<ConversationTurnOrchestrator["handle"]>>,
+  ): AiPublicResponse {
+    const response = this.toPublicResponse(turn);
+    return turn.storageMessage
+      ? { ...response, message: turn.storageMessage }
+      : response;
+  }
+
+  private hydrateStoredResponse(
+    response: AiPublicResponse,
+    canonicalFacts: readonly CanonicalFact[],
+  ): AiPublicResponse {
+    if (!response.message.includes("[[FACT:")) return response;
+    const facts = new Map(canonicalFacts.map((fact) => [fact.key, fact.displayText]));
+    let missing = false;
+    const message = response.message.replace(/\[\[FACT:([A-Za-z0-9_-]{1,80})\]\]/g, (_match, key: string) => {
+      const fact = facts.get(key);
+      if (!fact) {
+        missing = true;
+        return "";
+      }
+      return fact;
+    }).replace(/\s+/g, " ").trim();
+    if (missing || !message) {
+      return {
+        intent: "LIST_OFFERS",
+        message: "Selecione uma proposta para que eu possa explicar as condições.",
+        suggestedActions: ["LIST_OFFERS"],
+        requiresConfirmation: false,
+        fallbackUsed: true,
+      };
+    }
+    return { ...response, message };
   }
 
   private async recordSafeAudit(
@@ -219,6 +281,68 @@ export class ConversationTurnService {
       if (result.kind !== "IN_PROGRESS") return result;
     }
     throw new ApplicationError("AI_TURN_IN_PROGRESS", "Este turno ainda está sendo processado.", 409);
+  }
+
+  private async loadCanonicalFacts(
+    conversation: PersistedConversation,
+    input: { requestId?: string; selectedDebtRef?: string; selectedOfferRef?: string },
+  ): Promise<readonly CanonicalFact[]> {
+    if (!input.selectedDebtRef) return [];
+    if (
+      conversation.identityStatus !== "VERIFIED" ||
+      !["IDENTITY_VERIFIED", "OFFER_ACCEPTED"].includes(conversation.state) ||
+      !conversation.verifiedDebtorContext
+    ) {
+      throw new ApplicationError(
+        "IDENTITY_VERIFICATION_REQUIRED",
+        "Validação de identidade obrigatória.",
+        403,
+      );
+    }
+    if (!this.debtProvider) {
+      throw new ApplicationError(
+        "CONTEXT_UNAVAILABLE",
+        "Não foi possível carregar a seleção atual.",
+        503,
+      );
+    }
+    const debtor = verifiedDebtorContextSchema.parse(conversation.verifiedDebtorContext);
+    const organization = {
+      organizationId: conversation.organizationId,
+      requestId: input.requestId ?? "webchat-context",
+    };
+    const debt = await this.debtProvider.getDebt(
+      organization,
+      debtor,
+      input.selectedDebtRef,
+    );
+    const facts = [...buildDebtCanonicalFacts(debt)];
+    if (!input.selectedOfferRef) return facts;
+    const offer = await this.debtProvider.getAuthorizedOffer(
+      organization,
+      debtor,
+      input.selectedOfferRef,
+    );
+    if (
+      offer.debtRef !== debt.debtRef ||
+      offer.debtorRef !== debt.debtorRef ||
+      offer.creditorRef !== debt.creditor.creditorRef
+    ) {
+      throw new ApplicationError(
+        "CONTEXT_REFERENCE_INVALID",
+        "Não foi possível usar a seleção atual. Escolha novamente.",
+        400,
+      );
+    }
+    return [...facts, ...buildOfferCanonicalFacts(offer)];
+  }
+
+  private requestsOfferExplanation(message: string): boolean {
+    const normalized = message
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    return /\b(propost\w*|acord\w*|parcel\w*|condic\w*|term\w*)\b/.test(normalized);
   }
 
   private async authenticate(publicReference: string, token: string | undefined): Promise<PersistedConversation> {

@@ -18,6 +18,7 @@ const mutatingIntents = new Set<ConversationalIntent>([
 
 const forbiddenFreeText = /(?:\d|R\$|reais?|centavos?|desconto|juros|multa|melhor proposta|quita(?:ção|do)|processo judicial|penhora)/iu;
 const sensitiveInput = /(?:\b\d{3}[.-]?\d{3}[.-]?\d{3}-?\d{2}\b|\b\d{10,19}\b|[\w.+-]+@[\w.-]+\.[a-z]{2,})/iu;
+const technicalPublicLanguage = /(?:FACT_REF|backend|policy\s+gate|OpenAI|detalhes?\s+can[oô]nic)/iu;
 export const restrictedNegotiationTemplate = "Não posso criar, calcular ou recomendar condições diferentes. Posso apresentar as propostas previamente autorizadas disponíveis.";
 export const promptInjectionTemplate = "Não posso ignorar as regras da demonstração nem alterar estados por texto livre. Use somente as opções seguras exibidas.";
 
@@ -89,6 +90,7 @@ export class ConversationTurnOrchestrator {
         model: this.config.model,
         promptVersion: intentPromptVersion,
         usage: result.usage,
+        storageMessage: this.renderStorageExplanation(result.output.explanationSegments),
       };
     } catch (error) {
       return this.fallback(turn, "MODEL_UNAVAILABLE", {
@@ -157,11 +159,26 @@ export class ConversationTurnOrchestrator {
         return fact;
       }
       const text = segment.text ?? "";
-      if (!text || forbiddenFreeText.test(text)) {
+      if (!text || forbiddenFreeText.test(text) || technicalPublicLanguage.test(text)) {
         throw new Error("Unsafe free-form explanation.");
       }
       return text;
     }).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  private renderStorageExplanation(
+    segments: readonly Readonly<{
+      type: "TEXT" | "FACT_REF";
+      text: string | null;
+      factKey: string | null;
+    }>[],
+  ): string {
+    return segments.map((segment) => segment.type === "FACT_REF"
+      ? `[[FACT:${segment.factKey}]]`
+      : segment.text ?? "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   private allowedIntents(turn: NormalizedInboundTurn): ReadonlySet<ConversationalIntent> {

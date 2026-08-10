@@ -24,17 +24,22 @@ describe("demo api client", () => {
       conversationId: "conv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       message: "ajuda",
       clientTurnId: "00000000-0000-4000-8000-000000000012",
-      uiContext: "IDENTITY",
+      uiContext: "OFFER_REVIEW",
+      selectedDebtRef: "debt_opaque",
+      selectedOfferRef: "offer_opaque",
     });
     const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
     expect(body).toEqual({
       message: "ajuda",
       clientTurnId: "00000000-0000-4000-8000-000000000012",
-      uiContext: "IDENTITY",
+      uiContext: "OFFER_REVIEW",
+      selectedDebtRef: "debt_opaque",
+      selectedOfferRef: "offer_opaque",
     });
     expect(body).not.toHaveProperty("organizationId");
     expect(body).not.toHaveProperty("amount");
-    expect(body).not.toHaveProperty("offerRef");
+    expect(body).not.toHaveProperty("amount");
+    expect(body).not.toHaveProperty("terms");
   });
 
   it("uses strict explicit confirmation for terminal commands", async () => {

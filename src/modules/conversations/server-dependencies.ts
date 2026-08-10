@@ -66,6 +66,7 @@ export function getConversationTurnService(): ConversationTurnService {
       env.OPENAI_MAX_OUTPUT_TOKENS,
     ))
     : new UnavailableNaturalLanguageIntentClient();
+  const debtProvider = new SandboxDebtProvider(prisma);
   return new ConversationTurnService(
     new PrismaConversationStore(prisma),
     new ConversationTurnOrchestrator(
@@ -90,5 +91,6 @@ export function getConversationTurnService(): ConversationTurnService {
       circuitOpenSeconds: env.OPENAI_CIRCUIT_OPEN_SECONDS,
       reservationTtlMs: env.OPENAI_TOTAL_DEADLINE_MS + 5_000,
     },
+    debtProvider,
   );
 }

@@ -16,6 +16,7 @@ export async function POST(request: Request, context: RouteContext) {
     const turn = await getConversationTurnService().interpret({
       publicReference: conversationReferenceSchema.parse(conversationId),
       token: (await cookies()).get(conversationCookieName)?.value,
+      requestId: randomUUID(),
       ...body,
     });
     return NextResponse.json({ turn }, { status: 200 });
@@ -23,3 +24,4 @@ export async function POST(request: Request, context: RouteContext) {
     return toErrorResponse(error);
   }
 }
+import { randomUUID } from "node:crypto";

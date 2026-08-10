@@ -286,6 +286,8 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
         message: text,
         clientTurnId: crypto.randomUUID(),
         uiContext,
+        ...(debt ? { selectedDebtRef: debt.debtRef } : {}),
+        ...(offer ? { selectedOfferRef: offer.offerRef } : {}),
       });
       bot(result.turn.message);
     } catch {
