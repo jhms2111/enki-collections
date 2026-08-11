@@ -1,4 +1,5 @@
 import { SandboxDebtProvider } from "@/modules/debt-provider/sandbox/sandbox-debt-provider";
+import { SandboxOfferPresentationPolicy } from "@/modules/debt-provider/sandbox/sandbox-offer-presentation-policy";
 import { getRuntimeEnv } from "@/shared/config/env";
 import { getPrisma } from "@/shared/database/prisma";
 
@@ -92,5 +93,6 @@ export function getConversationTurnService(): ConversationTurnService {
       reservationTtlMs: env.OPENAI_TOTAL_DEADLINE_MS + 5_000,
     },
     debtProvider,
+    new SandboxOfferPresentationPolicy(),
   );
 }

@@ -11,6 +11,12 @@ import type { ConversationUiContext } from "./conversation-turn.types";
 import { ConversationTurnOrchestrator } from "./conversation-turn-orchestrator";
 import { buildDebtCanonicalFacts, buildOfferCanonicalFacts } from "./canonical-turn-context";
 import type { CanonicalFact } from "./conversation-turn.types";
+import type { OfferPresentation, OfferPresentationPolicy } from "./offer-presentation-policy";
+
+type CanonicalTurnContext = Readonly<{
+  facts: readonly CanonicalFact[];
+  offerPresentation?: OfferPresentation;
+}>;
 
 type AiRuntimeConfig = Readonly<{
   enabled: boolean;
@@ -41,6 +47,7 @@ export class ConversationTurnService {
       reservationTtlMs: 10_000,
     },
     private readonly debtProvider?: DebtProvider,
+    private readonly offerPresentationPolicy?: OfferPresentationPolicy,
   ) {}
 
   async interpret(input: {
@@ -54,7 +61,8 @@ export class ConversationTurnService {
     selectedOfferRef?: string;
   }): Promise<AiPublicResponse> {
     const conversation = await this.authenticate(input.publicReference, input.token);
-    const canonicalFacts = await this.loadCanonicalFacts(conversation, input);
+    const canonicalContext = await this.loadCanonicalContext(conversation, input);
+    const canonicalFacts = canonicalContext.facts;
     if (input.selectedDebtRef && !input.selectedOfferRef && this.requestsOfferExplanation(input.message)) {
       const turn = {
         intent: "LIST_OFFERS" as const,
@@ -63,6 +71,18 @@ export class ConversationTurnService {
         requiresConfirmation: false,
         fallbackUsed: true,
         fallbackReason: "OFFER_CONTEXT_REQUIRED",
+      };
+      await this.recordSafeAudit(conversation, input.clientTurnId, turn);
+      return this.toPublicResponse(turn);
+    }
+    if (input.selectedOfferRef && !canonicalContext.offerPresentation && this.requestsOfferExplanation(input.message)) {
+      const turn = {
+        intent: "LIST_OFFERS" as const,
+        message: "Selecione uma proposta para que eu possa explicar as condições.",
+        suggestedActions: ["LIST_OFFERS" as const],
+        requiresConfirmation: false,
+        fallbackUsed: true,
+        fallbackReason: "OFFER_PRESENTATION_UNAVAILABLE",
       };
       await this.recordSafeAudit(conversation, input.clientTurnId, turn);
       return this.toPublicResponse(turn);
@@ -80,10 +100,10 @@ export class ConversationTurnService {
       return this.toPublicResponse(preModelTurn);
     }
     if (!this.aiConfig.enabled) {
-      return (await this.executeAndAudit(conversation, input, canonicalFacts, undefined, false)).response;
+      return (await this.executeAndAudit(conversation, input, canonicalFacts, undefined, false, false, canonicalContext.offerPresentation)).response;
     }
     if (!this.aiStore || !this.aiConfig.safetyHmacSecret) {
-      return (await this.executeAndAudit(conversation, input, canonicalFacts, undefined, true)).response;
+      return (await this.executeAndAudit(conversation, input, canonicalFacts, undefined, true, false, canonicalContext.offerPresentation)).response;
     }
 
     const identity = deriveAiOperationalIdentity({
@@ -127,13 +147,13 @@ export class ConversationTurnService {
     let reservation = await this.aiStore.reserve(reservationInput);
     if (reservation.kind === "IN_PROGRESS") reservation = await this.waitForReplay(reservationInput);
     if (reservation.kind === "REPLAY") {
-      return this.hydrateStoredResponse(reservation.response, canonicalFacts);
+      return this.hydrateStoredResponse(reservation.response, canonicalFacts, canonicalContext.offerPresentation);
     }
     if (reservation.kind === "IN_PROGRESS") {
       throw new ApplicationError("AI_TURN_IN_PROGRESS", "Este turno ainda está sendo processado.", 409);
     }
     if (reservation.kind !== "RESERVED") {
-      const executed = await this.executeAndAudit(conversation, input, canonicalFacts, undefined, true, false);
+      const executed = await this.executeAndAudit(conversation, input, canonicalFacts, undefined, true, false, canonicalContext.offerPresentation);
       return this.aiStore.finalizeWithoutCall({
         reservation: reservationInput,
         response: executed.response,
@@ -142,7 +162,7 @@ export class ConversationTurnService {
       });
     }
 
-    const executed = await this.executeAndAudit(conversation, input, canonicalFacts, identity.safetyIdentifier, false, true);
+    const executed = await this.executeAndAudit(conversation, input, canonicalFacts, identity.safetyIdentifier, false, true, canonicalContext.offerPresentation);
     const { response, turn } = executed;
     await this.completeWithRetry({
       executionId: reservation.executionId,
@@ -185,6 +205,7 @@ export class ConversationTurnService {
     safetyIdentifier: string | undefined,
     deterministic: boolean,
     deferAudit = false,
+    offerPresentation?: OfferPresentation,
   ): Promise<Readonly<{ response: AiPublicResponse; turn: Awaited<ReturnType<ConversationTurnOrchestrator["handle"]>> }>> {
     const normalized = {
       channel: "WEBCHAT",
@@ -195,9 +216,20 @@ export class ConversationTurnService {
       canonicalFacts,
       safetyIdentifier,
     } as const;
-    const turn = deterministic
+    const interpretedTurn = deterministic
       ? this.orchestrator.handleDeterministic(normalized, "AI_OPERATIONAL_FALLBACK")
       : await this.orchestrator.handle(normalized);
+    const turn = offerPresentation &&
+      this.requestsOfferExplanation(input.message) &&
+      ["HELP", "LIST_OFFERS", "SELECT_OFFER"].includes(interpretedTurn.intent)
+      ? {
+          ...interpretedTurn,
+          message: offerPresentation.publicText,
+          storageMessage: offerPresentation.replayMarker,
+          suggestedActions: [] as const,
+          requiresConfirmation: false,
+        }
+      : interpretedTurn;
     if (!deferAudit) await this.recordSafeAudit(conversation, input.clientTurnId, turn);
     const response = this.toPublicResponse(turn);
     return { response, turn };
@@ -225,7 +257,20 @@ export class ConversationTurnService {
   private hydrateStoredResponse(
     response: AiPublicResponse,
     canonicalFacts: readonly CanonicalFact[],
+    offerPresentation?: OfferPresentation,
   ): AiPublicResponse {
+    if (response.message.startsWith("[[OFFER_PRESENTATION:")) {
+      if (offerPresentation && response.message === offerPresentation.replayMarker) {
+        return { ...response, message: offerPresentation.publicText };
+      }
+      return {
+        intent: "LIST_OFFERS",
+        message: "Selecione uma proposta para que eu possa explicar as condições.",
+        suggestedActions: ["LIST_OFFERS"],
+        requiresConfirmation: false,
+        fallbackUsed: true,
+      };
+    }
     if (!response.message.includes("[[FACT:")) return response;
     const facts = new Map(canonicalFacts.map((fact) => [fact.key, fact.displayText]));
     let missing = false;
@@ -283,11 +328,11 @@ export class ConversationTurnService {
     throw new ApplicationError("AI_TURN_IN_PROGRESS", "Este turno ainda está sendo processado.", 409);
   }
 
-  private async loadCanonicalFacts(
+  private async loadCanonicalContext(
     conversation: PersistedConversation,
     input: { requestId?: string; selectedDebtRef?: string; selectedOfferRef?: string },
-  ): Promise<readonly CanonicalFact[]> {
-    if (!input.selectedDebtRef) return [];
+  ): Promise<CanonicalTurnContext> {
+    if (!input.selectedDebtRef) return { facts: [] };
     if (
       conversation.identityStatus !== "VERIFIED" ||
       !["IDENTITY_VERIFIED", "OFFER_ACCEPTED"].includes(conversation.state) ||
@@ -317,7 +362,7 @@ export class ConversationTurnService {
       input.selectedDebtRef,
     );
     const facts = [...buildDebtCanonicalFacts(debt)];
-    if (!input.selectedOfferRef) return facts;
+    if (!input.selectedOfferRef) return { facts };
     const offer = await this.debtProvider.getAuthorizedOffer(
       organization,
       debtor,
@@ -334,7 +379,10 @@ export class ConversationTurnService {
         400,
       );
     }
-    return [...facts, ...buildOfferCanonicalFacts(offer)];
+    return {
+      facts: [...facts, ...buildOfferCanonicalFacts(offer)],
+      offerPresentation: this.offerPresentationPolicy?.present(offer) ?? undefined,
+    };
   }
 
   private requestsOfferExplanation(message: string): boolean {

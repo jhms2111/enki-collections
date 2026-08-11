@@ -6,6 +6,7 @@ import type { DebtProvider } from "@/modules/debt-provider/debt-provider";
 import type { AiOperationalStore } from "@/modules/webchat/ai-operational-store";
 import { ReservedAiUsageBudgetGate, ConversationTurnOrchestrator } from "@/modules/webchat/conversation-turn-orchestrator";
 import { ConversationTurnService } from "@/modules/webchat/conversation-turn-service";
+import { SandboxOfferPresentationPolicy } from "@/modules/debt-provider/sandbox/sandbox-offer-presentation-policy";
 import type { CanonicalFact, NormalizedInboundTurn } from "@/modules/webchat/conversation-turn.types";
 import type { NaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
 import { ApplicationError } from "@/shared/errors/application-error";
@@ -55,7 +56,7 @@ const offer = {
   terms: {
     kind: "INSTALLMENT" as const,
     total: { amountInCents: 110_003, currency: "BRL" as const },
-    downPayment: { amountInCents: 10_001, currency: "BRL" as const },
+    downPayment: { amountInCents: 20_000, currency: "BRL" as const },
     installmentCount: 5,
     installmentAmount: { amountInCents: 20_000, currency: "BRL" as const },
     firstDueDate: "2026-09-20",
@@ -145,6 +146,7 @@ function service(input: {
       reservationTtlMs: 20_000,
     },
     input.debtProvider ?? provider(),
+    new SandboxOfferPresentationPolicy(),
   );
   return { target, interpret };
 }
@@ -170,6 +172,7 @@ describe("canonical conversation context", () => {
       selectedOfferRef: offer.offerRef,
     });
     const turn = vi.mocked(interpret).mock.calls[0][0];
+    expect(interpret).toHaveBeenCalledOnce();
     expect(turn.canonicalFacts.map((fact) => fact.key)).toEqual([
       "debt_description", "debt_amount", "debt_due_date", "debt_status",
       "offer_kind", "offer_total", "offer_down_payment", "offer_installment_count",
@@ -177,8 +180,9 @@ describe("canonical conversation context", () => {
     ]);
     expect(debtProvider.getDebt).toHaveBeenCalledOnce();
     expect(debtProvider.getAuthorizedOffer).toHaveBeenCalledOnce();
-    expect(result.message).toContain("Modalidade: parcelada.");
-    expect(result.message).toContain("Quantidade de parcelas: 5.");
+    expect(result.message).toBe(
+      "Essa proposta tem valor total de R$ 1.100,03, dividido em 5 parcelas de R$ 200,00. A primeira parcela corresponde à entrada, com vencimento em 20 de setembro de 2026. A proposta é válida até 15 de setembro de 2026.",
+    );
     expect(result.message).not.toContain(debt.debtRef);
     expect(result.message).not.toContain(offer.offerRef);
     expect(result.requiresConfirmation).toBe(false);
