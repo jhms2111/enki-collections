@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { scrollChatEnd } from "@/modules/webchat/deterministic-webchat";
+import { scrollChatEnd, shouldSubmitComposerKey } from "@/modules/webchat/deterministic-webchat";
 
 describe("deterministic webchat scrolling", () => {
   it("does not call a missing optional scrollIntoView implementation", () => {
@@ -15,5 +15,19 @@ describe("deterministic webchat scrolling", () => {
       behavior: "smooth",
       block: "nearest",
     });
+  });
+});
+
+describe("webchat composer keyboard", () => {
+  it("submits with Enter", () => {
+    expect(shouldSubmitComposerKey("Enter", false)).toBe(true);
+  });
+
+  it("keeps a new line with Shift+Enter", () => {
+    expect(shouldSubmitComposerKey("Enter", true)).toBe(false);
+  });
+
+  it("does not submit for other keys", () => {
+    expect(shouldSubmitComposerKey(" ", false)).toBe(false);
   });
 });

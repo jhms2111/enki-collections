@@ -53,6 +53,10 @@ export function scrollChatEnd(element: HTMLDivElement | null): void {
   element?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
 }
 
+export function shouldSubmitComposerKey(key: string, shiftKey: boolean): boolean {
+  return key === "Enter" && !shiftKey;
+}
+
 export function DeterministicWebchat({ slug, version }: { slug: string; version: string }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [challenge, setChallenge] = useState<PublicChallenge | null>(null);
@@ -69,6 +73,7 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
   const [error, setError] = useState<string | null>(null);
   const [identifier, setIdentifier] = useState("");
   const [terminalConfirmation, setTerminalConfirmation] = useState<TerminalConfirmation>(null);
+  const [composerText, setComposerText] = useState("");
   const logEnd = useRef<HTMLDivElement>(null);
   const storageKey = `enki-chat:conversation:${slug}`;
   const terminal = conversation?.state === "CLOSED" || conversation?.state === "OPTED_OUT";
@@ -181,7 +186,7 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
       setOffer(null);
       setAcceptanceId(null);
       setInstrument(null);
-      bot("Estes valores e vencimentos vieram do provider. Escolha apenas uma proposta previamente autorizada.");
+      bot("Confira os valores e vencimentos exibidos. Escolha apenas uma proposta previamente autorizada.");
     });
   }
 
@@ -263,12 +268,11 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
 
   async function submitText(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const field = new FormData(form).get("chatText");
-    const text = String(field ?? "");
+    if (busy) return;
+    const text = composerText;
     if (!text.trim()) return;
     user(text);
-    form.reset();
+    setComposerText("");
     if (!conversation) return;
     setBusy(true);
     try {
@@ -303,19 +307,18 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
 
   return (
     <main className="chat-page">
-      <div className="demo-ribbon">DEMONSTRAÇÃO · DADOS FICTÍCIOS · SEM VALOR FINANCEIRO</div>
       <header className="chat-header">
         <a className="brand" href={`/demo/${encodeURIComponent(slug)}`}><span className="brand-mark" aria-hidden="true">E</span><span>ENKI <strong>Collections</strong></span></a>
-        <nav aria-label="Alternativas"><a href={`/demo/${encodeURIComponent(slug)}`}>Usar portal</a></nav>
+        <span className="chat-demo-chip">Demonstração · sem valor financeiro</span>
       </header>
       <section className="chat-shell" aria-label="Webchat demonstrativo">
-        <div className="chat-title"><div><p className="eyebrow">Atendimento determinístico</p><h1>Webchat demonstrativo</h1></div>
-          <button className="chat-stop" disabled={!conversation || terminal || busy} onClick={() => setTerminalConfirmation("opt-out")}>Interromper mensagens</button>
+        <div className="chat-title"><a className="chat-back" aria-label="Voltar ao início" href={`/demo/${encodeURIComponent(slug)}`}>←</a><span className="assistant-avatar" aria-hidden="true">E</span><div><h1>Assistente ENKI</h1><p><span className="status-dot" />Atendimento digital</p></div>
+          <div className="chat-header-actions"><button className="chat-stop" disabled={!conversation || terminal || busy} onClick={() => setTerminalConfirmation("opt-out")}>Interromper mensagens</button><button className="chat-menu" aria-label="Encerrar conversa" disabled={!conversation || terminal || busy} onClick={() => setTerminalConfirmation("close")}>•••</button></div>
         </div>
         <div className="chat-log" role="log" aria-live="polite" aria-relevant="additions">
           {messages.map((message) => <div className={`chat-bubble ${message.actor}`} key={message.id}><span>{message.actor === "bot" ? "ENKI demo" : "Você"}</span><p>{message.text}</p></div>)}
           {error && <div className="alert error" role="alert">{error}</div>}
-          {busy && <div className="typing" role="status">Processando…</div>}
+          {busy && <div className="typing" role="status"><span aria-hidden="true"><i /><i /><i /></span>Assistente está digitando…</div>}
           <div ref={logEnd} />
         </div>
         <div className="chat-actions">
@@ -324,14 +327,13 @@ export function DeterministicWebchat({ slug, version }: { slug: string; version:
           {conversation && !terminal && conversation.identityStatus === "PENDING" && challenge && <fieldset><legend>{challenge.prompt} · {challenge.attemptsRemaining} tentativa(s)</legend><div className="quick-replies">{challenge.options.map((option) => <button className="button secondary" key={option.optionRef} disabled={busy} onClick={() => chooseChallenge(option.optionRef, option.label)}>{option.label}</button>)}</div></fieldset>}
           {conversation?.identityStatus === "BLOCKED" && !terminal && <p className="terminal-note" role="alert">Sessão bloqueada após três falhas. Nenhuma dívida foi revelada.</p>}
           {conversation?.identityStatus === "VERIFIED" && !terminal && !debt && <div><h2>Escolha uma dívida fictícia</h2>{creditors.map((creditor) => <section className="chat-group" key={creditor.creditorRef}><h3>{creditor.displayName}</h3>{creditor.debts.map((item) => <button className="chat-option" key={item.debtRef} onClick={() => chooseDebt(item.debtRef, item.description)}><span>{item.description} · vence {formatDate(item.dueDate)}</span><strong>{formatMoney(item.amount.amountInCents)}</strong></button>)}</section>)}</div>}
-          {conversation?.identityStatus === "VERIFIED" && !terminal && debt && <div className="chat-negotiation"><button className="text-button" onClick={() => { setDebt(null); setOffer(null); setOffers([]); }}>← Voltar às dívidas</button><h2>{debt.creditor.displayName}</h2><p>{debt.description} · {formatMoney(debt.amount.amountInCents)} · vence {formatDate(debt.dueDate)}</p><h3>Propostas autorizadas</h3>{offers.map((item) => <button className="chat-option" key={item.offerRef} disabled={item.status !== "AVAILABLE"} onClick={() => setOffer(item)}><span>{item.terms.kind === "CASH" ? "À vista" : `${item.terms.installmentCount} parcelas`} · primeiro vencimento {formatDate(item.terms.firstDueDate)}</span><strong>{formatMoney(item.terms.total.amountInCents)}</strong></button>)}{offer && !acceptanceId && <div className="chat-confirm"><strong>Confirma o aceite demonstrativo de {formatMoney(offer.terms.total.amountInCents)}?</strong><p>O servidor validará os termos canônicos. Isso não é pagamento.</p><button className="button primary" onClick={confirmAcceptance}>Confirmar aceite demonstrativo</button><button className="button secondary" onClick={() => setOffer(null)}>Cancelar</button></div>}{acceptanceId && <div className="chat-confirm"><h3>Instrumento não pagável</h3><div className="quick-replies"><button className="button secondary" onClick={() => makeInstrument("DEMO_LINK")}>Link demo</button><button className="button secondary" onClick={() => makeInstrument("DEMO_BOLETO")}>Boleto demo</button><button className="button secondary" onClick={() => makeInstrument("DEMO_PIX")}>Pix demo</button></div>{instrument && <pre className="chat-instrument">{instrument}</pre>}</div>}<div className="chat-operations"><form onSubmit={promise}><h3>Promessa</h3><p>Intenção futura; não é pagamento.</p><label htmlFor="chatPromise">Data</label><input id="chatPromise" name="promisedDate" type="date" required /><button className="button secondary">Confirmar promessa</button></form><form onSubmit={paymentReport}><h3>Pagamento informado</h3><p>Pendente; não confirma quitação.</p><label htmlFor="chatReport">Data e hora declaradas</label><input id="chatReport" name="reportedAt" type="datetime-local" required /><button className="button secondary">Confirmar informação</button></form><form onSubmit={dispute}><h3>Contestação</h3><p>Pendente de análise.</p><label htmlFor="chatReason">Motivo</label><select id="chatReason" name="reasonCode" required defaultValue=""><option value="" disabled>Selecione</option><option value="NOT_RECOGNIZED">Não reconheço</option><option value="AMOUNT_INCORRECT">Valor incorreto</option><option value="ALREADY_PAID">Já informado como pago</option><option value="OTHER">Outro</option></select><label htmlFor="chatDescription">Descrição opcional</label><textarea id="chatDescription" name="description" maxLength={300} rows={2} /><button className="button secondary">Confirmar contestação</button></form></div></div>}
+          {conversation?.identityStatus === "VERIFIED" && !terminal && debt && <div className="chat-negotiation"><button className="text-button" onClick={() => { setDebt(null); setOffer(null); setOffers([]); }}>← Voltar às dívidas</button><div className="selected-debt"><span>{debt.creditor.displayName}</span><strong>{debt.description}</strong><p>{formatMoney(debt.amount.amountInCents)} · vence {formatDate(debt.dueDate)}</p></div><h3>Propostas autorizadas</h3>{offers.map((item) => <button className="chat-option" key={item.offerRef} disabled={item.status !== "AVAILABLE"} onClick={() => setOffer(item)}><span>{item.terms.kind === "CASH" ? "À vista" : `${item.terms.installmentCount} parcelas`} · primeiro vencimento {formatDate(item.terms.firstDueDate)}</span><strong>{formatMoney(item.terms.total.amountInCents)}</strong></button>)}{offer && !acceptanceId && <div className="chat-confirm"><strong>Revisar aceite de {formatMoney(offer.terms.total.amountInCents)}</strong><p>A proposta será validada novamente. Isso não é pagamento.</p><button className="button primary" onClick={confirmAcceptance}>Confirmar aceite demonstrativo</button><button className="button secondary" onClick={() => setOffer(null)}>Cancelar</button></div>}{acceptanceId && <div className="chat-confirm"><span className="demo-seal">DEMONSTRAÇÃO — SEM VALOR FINANCEIRO</span><h3>Instrumento não pagável</h3><div className="quick-replies"><button className="button secondary" onClick={() => makeInstrument("DEMO_LINK")}>Link demo</button><button className="button secondary" onClick={() => makeInstrument("DEMO_BOLETO")}>Boleto demo</button><button className="button secondary" onClick={() => makeInstrument("DEMO_PIX")}>Pix demo</button></div>{instrument && <pre className="chat-instrument">{instrument}</pre>}</div>}<details className="chat-occurrences"><summary>Outras opções</summary><div className="chat-operations"><form onSubmit={promise}><h3>Promessa</h3><p>Intenção futura; não é pagamento.</p><label htmlFor="chatPromise">Data</label><input id="chatPromise" name="promisedDate" type="date" required /><button className="button secondary">Confirmar promessa</button></form><form onSubmit={paymentReport}><h3>Pagamento informado</h3><p>Pendente; não confirma quitação.</p><label htmlFor="chatReport">Data e hora declaradas</label><input id="chatReport" name="reportedAt" type="datetime-local" required /><button className="button secondary">Confirmar informação</button></form><form onSubmit={dispute}><h3>Contestação</h3><p>Pendente de análise.</p><label htmlFor="chatReason">Motivo</label><select id="chatReason" name="reasonCode" required defaultValue=""><option value="" disabled>Selecione</option><option value="NOT_RECOGNIZED">Não reconheço</option><option value="AMOUNT_INCORRECT">Valor incorreto</option><option value="ALREADY_PAID">Já informado como pago</option><option value="OTHER">Outro</option></select><label htmlFor="chatDescription">Descrição opcional</label><textarea id="chatDescription" name="description" maxLength={300} rows={2} /><button className="button secondary">Confirmar contestação</button></form></div></details></div>}
           {terminal && <div className="terminal-note" role="status"><strong>{conversation?.state === "OPTED_OUT" ? "Mensagens interrompidas" : "Conversa encerrada"}</strong><p>Este estado é terminal. Inicie uma nova sessão conscientemente para testar novamente.</p><button className="button secondary" onClick={() => { sessionStorage.removeItem(storageKey); location.reload(); }}>Criar nova sessão</button></div>}
-          {conversation && !terminal && <form className="chat-text" onSubmit={submitText}><label htmlFor="chatText">Mensagem opcional</label><div><input id="chatText" name="chatText" maxLength={160} autoComplete="off" placeholder="Ex.: ajuda ou ver dívidas" /><button className="button secondary">Enviar</button></div><small>Texto livre apenas orienta; nunca confirma uma operação.</small></form>}
-          {conversation && !terminal && <button className="text-button close-chat" onClick={() => setTerminalConfirmation("close")}>Encerrar conversa</button>}
+          {conversation && !terminal && <form className="chat-text" onSubmit={submitText}><label className="sr-only" htmlFor="chatText">Mensagem</label><div><textarea id="chatText" name="chatText" rows={1} maxLength={160} autoComplete="off" value={composerText} onChange={(event) => { setComposerText(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (shouldSubmitComposerKey(event.key, event.shiftKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder="Digite sua mensagem…" /><button className="chat-send" aria-label="Enviar mensagem" disabled={busy || !composerText.trim()}><span aria-hidden="true">→</span></button></div><small>Uma mensagem nunca confirma operações sem sua ação explícita.</small></form>}
           {terminalConfirmation && <div className="terminal-confirm" role="dialog" aria-modal="true" aria-labelledby="terminal-title"><h2 id="terminal-title">{terminalConfirmation === "opt-out" ? "Interromper todas as mensagens?" : "Encerrar esta conversa?"}</h2><p>Esta ação é terminal e não reabre a conversa.</p><button autoFocus className="button primary" onClick={() => terminalAction(terminalConfirmation)}>Confirmar</button><button className="button secondary" onClick={() => setTerminalConfirmation(null)}>Voltar</button></div>}
         </div>
       </section>
-      <footer className="chat-footer"><strong>DEMONSTRAÇÃO — SEM VALOR FINANCEIRO</strong><span>Fluxo determinístico · sem IA · v{version}</span></footer>
+      <footer className="chat-footer"><strong>DEMONSTRAÇÃO — SEM VALOR FINANCEIRO</strong><span>ENKI Collections · v{version}</span></footer>
     </main>
   );
 }

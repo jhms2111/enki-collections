@@ -340,16 +340,15 @@ export function DemoExperience({
 
       <section className="hero">
         <div>
-          <p className="eyebrow">Jornada digital demonstrativa</p>
-          <h1>Negociação clara, segura e sob controle.</h1>
+          <p className="eyebrow">ENKI Collections</p>
+          <h1>Negociação digital simples, segura e disponível a qualquer hora.</h1>
           <p>
-            Explore um atendimento fictício de cobrança. Nenhuma ação gera
-            pagamento real, Pix válido, boleto pagável ou quitação automática.
+            Consulte pendências, entenda propostas e registre suas decisões em uma experiência guiada.
           </p>
         </div>
         <div className="trust-card">
           <span aria-hidden="true">✓</span>
-          <div><strong>Seus dados reais não são necessários</strong><br />Use apenas os identificadores DEMO.</div>
+          <div><strong>Dados inteiramente fictícios</strong><br />Nenhum pagamento real será realizado.</div>
         </div>
       </section>
 
@@ -365,15 +364,16 @@ export function DemoExperience({
       {busy && <div className="loading" role="status">Processando com segurança…</div>}
 
       {!conversation && (
-        <section className="panel landing-panel">
+        <section className="panel landing-panel commercial-start">
           <div>
-            <p className="eyebrow">Comece por aqui</p>
-            <h2>Uma demonstração completa em poucos passos</h2>
-            <p>Você verá dívidas e propostas inteiramente fictícias, sempre separadas por credor.</p>
+            <p className="eyebrow">Experiência guiada</p>
+            <h2>Veja a jornada completa em poucos minutos.</h2>
+            <p>Use o identificador <strong className="inline-demo-id">DEMO-AURORA-001</strong>. Nenhum dado pessoal é necessário.</p>
           </div>
-          <button className="button primary" onClick={start} disabled={busy}>
-            Iniciar demonstração
-          </button>
+          <div className="landing-actions">
+            <a className="button primary" href={`/demo/${encodeURIComponent(slug)}/chat`}>Iniciar atendimento</a>
+            <button className="button quiet" onClick={start} disabled={busy}>Conhecer o portal</button>
+          </div>
         </section>
       )}
 
@@ -453,11 +453,11 @@ export function DemoExperience({
           <button className="back-button" onClick={() => { setSelectedDebt(null); setSelectedOffer(null); setReceipt(null); }}>← Voltar às dívidas</button>
           <div className="detail-header">
             <div><p className="eyebrow">{selectedDebt.creditor?.displayName}</p><h2>{selectedDebt.description}</h2><p>Vencimento: {formatDate(selectedDebt.dueDate)}</p></div>
-            <div className="amount-card"><small>Valor informado pelo provider</small><strong>{formatMoney(selectedDebt.amount.amountInCents)}</strong></div>
+            <div className="amount-card"><small>Valor da dívida demonstrativa</small><strong>{formatMoney(selectedDebt.amount.amountInCents)}</strong></div>
           </div>
 
           <h3>Propostas previamente autorizadas</h3>
-          <p className="muted">A expiração abaixo é orientação visual. A validação definitiva é sempre feita pelo servidor e pelo provider.</p>
+          <p className="muted">A validade exibida é apenas orientativa e será confirmada ao revisar a proposta.</p>
           <div className="offers-grid">
             {offers.map((offer) => (
               <article className={selectedOffer?.offerRef === offer.offerRef ? "offer-card selected" : "offer-card"} key={offer.offerRef}>
