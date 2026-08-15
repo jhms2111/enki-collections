@@ -3,553 +3,231 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  acceptOffer,
-  createConversation,
-  createInstrument,
-  DemoApiError,
-  getChallenge,
-  getConversation,
-  getDebt,
-  identify,
-  listDebts,
-  listOffers,
-  openDispute,
-  registerPromise,
-  reportPayment,
-  verifyIdentity,
-  type Conversation,
-  type CreditorGroup,
-  type Debt,
-  type Offer,
-  type PublicChallenge,
+  acceptOffer, closeConversation, createConversation, createInstrument, DemoApiError,
+  getChallenge, getConversation, getDebt, identify, listDebts, listOffers, openDispute,
+  optOutConversation, registerPromise, reportPayment, verifyIdentity,
+  type Conversation, type CreditorGroup, type Debt, type Offer, type PublicChallenge,
 } from "./demo-api";
+import { GuidedAssistant } from "./guided-assistant";
 import { clearIntentKey, getIntentKey } from "./idempotency-client";
 
 type Receipt = Readonly<{ title: string; lines: readonly string[] }>;
+type JourneyView = "DETAIL" | "OFFERS" | "REVIEW";
+type TerminalChoice = "CLOSE" | "OPT_OUT" | null;
 
-const moneyFormatter = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
-
-function formatMoney(amountInCents: number) {
-  return moneyFormatter.format(amountInCents / 100);
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "medium",
-    timeZone: "UTC",
-  }).format(new Date(`${value.slice(0, 10)}T12:00:00.000Z`));
-}
+const moneyFormatter = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const formatMoney = (cents: number) => moneyFormatter.format(cents / 100);
+const formatDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeZone: "UTC" })
+  .format(new Date(`${value.slice(0, 10)}T12:00:00.000Z`));
 
 function safeError(error: unknown) {
-  if (error instanceof DemoApiError) {
-    return `${error.message}${error.requestId ? ` Referência: ${error.requestId}` : ""}`;
-  }
-  return "Não foi possível concluir a solicitação. Tente novamente.";
+  if (error instanceof DemoApiError) return error.status === 429
+    ? "Muitas tentativas. Aguarde um pouco e tente novamente."
+    : error.status >= 500 ? "A demonstração está indisponível no momento. Tente novamente em instantes." : error.message;
+  return "Não foi possível concluir esta etapa. Tente novamente.";
 }
 
-export function DemoExperience({
-  slug,
-  version,
-}: {
-  slug: string;
-  version: string;
-}) {
+export function DemoExperience({ slug, version }: { slug: string; version: string }) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [challenge, setChallenge] = useState<PublicChallenge | null>(null);
   const [creditors, setCreditors] = useState<readonly CreditorGroup[]>([]);
-  const [selectedDebt, setSelectedDebt] = useState<
-    (Debt & { creditor?: { displayName: string } }) | null
-  >(null);
+  const [selectedDebt, setSelectedDebt] = useState<(Debt & { creditor?: { displayName: string } }) | null>(null);
   const [offers, setOffers] = useState<readonly Offer[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [acceptanceId, setAcceptanceId] = useState<string | null>(null);
-  const [instrument, setInstrument] = useState<{
-    type: string;
-    displayValue: string;
-    expiresAt: string;
-    warning: string;
-  } | null>(null);
+  const [instrument, setInstrument] = useState<{ type: string; displayValue: string; expiresAt: string; warning: string } | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [identifier, setIdentifier] = useState("DEMO-AURORA-001");
   const [selectedOption, setSelectedOption] = useState("");
+  const [journeyView, setJourneyView] = useState<JourneyView>("DETAIL");
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [humanRequested, setHumanRequested] = useState(false);
+  const [terminalChoice, setTerminalChoice] = useState<TerminalChoice>(null);
   const terminal = conversation?.state === "CLOSED" || conversation?.state === "OPTED_OUT";
-
-  const conversationStorageKey = `enki-demo:conversation:${slug}`;
+  const storageKey = `enki-demo:conversation:${slug}`;
 
   const loadDebts = useCallback(async (conversationId: string) => {
-    const result = await listDebts(conversationId);
-    setCreditors(result.creditors);
+    setCreditors((await listDebts(conversationId)).creditors);
   }, []);
 
   useEffect(() => {
-    const reference = sessionStorage.getItem(conversationStorageKey);
-    if (!reference) {
-      queueMicrotask(() => setBusy(false));
-      return;
-    }
-    getConversation(reference)
-      .then(async ({ conversation: restored }) => {
-        setConversation(restored);
-        if (restored.state === "CLOSED" || restored.state === "OPTED_OUT") {
-          return;
-        } else if (restored.identityStatus === "PENDING") {
-          const current = await getChallenge(restored.id);
-          setChallenge(current.challenge);
-        } else if (restored.identityStatus === "VERIFIED") {
-          await loadDebts(restored.id);
-        }
-      })
-      .catch(() => {
-        sessionStorage.removeItem(conversationStorageKey);
-        setError("A sessão anterior não está mais disponível. Inicie uma nova demonstração.");
-      })
-      .finally(() => setBusy(false));
-  }, [conversationStorageKey, loadDebts]);
+    const reference = sessionStorage.getItem(storageKey);
+    if (!reference) { queueMicrotask(() => setBusy(false)); return; }
+    getConversation(reference).then(async ({ conversation: restored }) => {
+      setConversation(restored);
+      if (restored.state === "CLOSED" || restored.state === "OPTED_OUT") return;
+      if (restored.identityStatus === "PENDING") setChallenge((await getChallenge(restored.id)).challenge);
+      if (restored.identityStatus === "VERIFIED") await loadDebts(restored.id);
+    }).catch(() => {
+      sessionStorage.removeItem(storageKey);
+      setError("A sessão anterior expirou. Inicie uma nova demonstração.");
+    }).finally(() => setBusy(false));
+  }, [loadDebts, storageKey]);
 
   async function run(action: () => Promise<void>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (caught) {
-      setError(safeError(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function terminalIntent(scope: string) {
-    clearIntentKey(scope);
+    if (busy) return;
+    setBusy(true); setError(null);
+    try { await action(); } catch (caught) { setError(safeError(caught)); } finally { setBusy(false); }
   }
 
   async function start() {
     await run(async () => {
       const result = await createConversation(slug);
-      setConversation(result.conversation);
-      sessionStorage.setItem(conversationStorageKey, result.conversation.id);
-      setChallenge(null);
-      setCreditors([]);
-      setSelectedDebt(null);
-      setOffers([]);
-      setReceipt(null);
+      setConversation(result.conversation); sessionStorage.setItem(storageKey, result.conversation.id);
+      setChallenge(null); setCreditors([]); setSelectedDebt(null); setSelectedOffer(null); setJourneyView("DETAIL"); setReceipt(null);
     });
   }
 
   async function submitIdentifier(event: React.FormEvent) {
-    event.preventDefault();
-    if (!conversation) return;
+    event.preventDefault(); if (!conversation) return;
     await run(async () => {
       const result = await identify(conversation.id, identifier);
-      setConversation(result.conversation);
-      setChallenge(result.challenge);
-      setSelectedOption("");
+      setConversation(result.conversation); setChallenge(result.challenge); setSelectedOption("");
     });
   }
 
   async function submitChallenge(event: React.FormEvent) {
-    event.preventDefault();
-    if (!conversation || !selectedOption) return;
+    event.preventDefault(); if (!conversation || !selectedOption) return;
     await run(async () => {
       const result = await verifyIdentity(conversation.id, selectedOption);
-      setConversation(result.conversation);
-      setSelectedOption("");
-      if (result.verified) {
-        setChallenge(null);
-        await loadDebts(conversation.id);
-      } else if (result.conversation.identityStatus === "BLOCKED") {
-        setChallenge(null);
-      } else {
-        const current = await getChallenge(conversation.id);
-        setChallenge(current.challenge);
-      }
+      setConversation(result.conversation); setSelectedOption("");
+      if (result.verified) { setChallenge(null); await loadDebts(conversation.id); }
+      else if (result.conversation.identityStatus === "BLOCKED") setChallenge(null);
+      else setChallenge((await getChallenge(conversation.id)).challenge);
     });
   }
 
   async function selectDebt(debtRef: string) {
     if (!conversation) return;
     await run(async () => {
-      const [{ debt }, offerResult] = await Promise.all([
-        getDebt(conversation.id, debtRef),
-        listOffers(conversation.id, debtRef),
-      ]);
-      setSelectedDebt(debt);
-      setOffers(offerResult.offers);
-      setSelectedOffer(null);
-      setInstrument(null);
-      setReceipt(null);
-      const savedAcceptance = sessionStorage.getItem(
-        `enki-demo:acceptance:${conversation.id}:${debtRef}`,
-      );
-      setAcceptanceId(savedAcceptance);
+      const [{ debt }, available] = await Promise.all([getDebt(conversation.id, debtRef), listOffers(conversation.id, debtRef)]);
+      setSelectedDebt(debt); setOffers(available.offers); setSelectedOffer(null); setJourneyView("DETAIL"); setInstrument(null); setReceipt(null);
+      setAcceptanceId(sessionStorage.getItem(`enki-demo:acceptance:${conversation.id}:${debtRef}`));
     });
   }
 
   async function confirmAcceptance() {
     if (!conversation || !selectedDebt || !selectedOffer) return;
     const scope = `accept:${conversation.id}:${selectedDebt.debtRef}:${selectedOffer.offerRef}`;
-    const fingerprint = JSON.stringify({
-      offerRef: selectedOffer.offerRef,
-      providerVersion: selectedOffer.providerVersion,
-      terms: selectedOffer.terms,
-    });
+    const fingerprint = JSON.stringify({ offerRef: selectedOffer.offerRef, providerVersion: selectedOffer.providerVersion, terms: selectedOffer.terms });
     await run(async () => {
-      const result = await acceptOffer({
-        conversationId: conversation.id,
-        debtRef: selectedDebt.debtRef,
-        offer: selectedOffer,
-        idempotencyKey: getIntentKey(scope, fingerprint),
-      });
-      terminalIntent(scope);
-      setAcceptanceId(result.acceptance.id);
-      sessionStorage.setItem(
-        `enki-demo:acceptance:${conversation.id}:${selectedDebt.debtRef}`,
-        result.acceptance.id,
-      );
-      setReceipt({
-        title: "Proposta demonstrativa aceita",
-        lines: [
-          `Referência: ${result.acceptance.id}`,
-          "Este aceite não representa pagamento ou quitação.",
-        ],
-      });
+      const result = await acceptOffer({ conversationId: conversation.id, debtRef: selectedDebt.debtRef, offer: selectedOffer, idempotencyKey: getIntentKey(scope, fingerprint) });
+      clearIntentKey(scope); setAcceptanceId(result.acceptance.id);
+      sessionStorage.setItem(`enki-demo:acceptance:${conversation.id}:${selectedDebt.debtRef}`, result.acceptance.id);
+      setReceipt({ title: "Proposta demonstrativa confirmada", lines: ["O aceite foi registrado.", "Isso não representa pagamento ou quitação."] });
     });
   }
 
-  async function requestInstrument(
-    type: "DEMO_LINK" | "DEMO_BOLETO" | "DEMO_PIX",
-  ) {
+  async function requestInstrument(type: "DEMO_LINK" | "DEMO_BOLETO" | "DEMO_PIX") {
     if (!conversation || !acceptanceId) return;
     const scope = `instrument:${conversation.id}:${acceptanceId}:${type}`;
     await run(async () => {
-      const result = await createInstrument({
-        conversationId: conversation.id,
-        acceptanceId,
-        type,
-        idempotencyKey: getIntentKey(scope, type),
-      });
-      terminalIntent(scope);
-      setInstrument(result.instrument);
+      const result = await createInstrument({ conversationId: conversation.id, acceptanceId, type, idempotencyKey: getIntentKey(scope, type) });
+      clearIntentKey(scope); setInstrument(result.instrument);
     });
   }
 
   async function submitPromise(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!conversation || !selectedDebt) return;
-    const data = new FormData(event.currentTarget);
-    const promisedDate = String(data.get("promisedDate"));
-    const offerRef = selectedOffer?.offerRef;
+    event.preventDefault(); if (!conversation || !selectedDebt) return;
+    const promisedDate = String(new FormData(event.currentTarget).get("promisedDate"));
     const scope = `promise:${conversation.id}:${selectedDebt.debtRef}`;
-    const fingerprint = JSON.stringify({ promisedDate, offerRef });
+    const fingerprint = JSON.stringify({ promisedDate, offerRef: selectedOffer?.offerRef });
     await run(async () => {
-      const result = await registerPromise({
-        conversationId: conversation.id,
-        debtRef: selectedDebt.debtRef,
-        promisedDate,
-        offerRef,
-        idempotencyKey: getIntentKey(scope, fingerprint),
-      });
-      terminalIntent(scope);
-      setReceipt({
-        title: "Promessa demonstrativa registrada",
-        lines: [
-          `Data declarada: ${formatDate(result.promise.promisedDate)}`,
-          "A promessa não representa pagamento ou quitação.",
-        ],
-      });
+      const result = await registerPromise({ conversationId: conversation.id, debtRef: selectedDebt.debtRef, promisedDate, offerRef: selectedOffer?.offerRef, idempotencyKey: getIntentKey(scope, fingerprint) });
+      clearIntentKey(scope); setReceipt({ title: "Promessa registrada", lines: [`Data declarada: ${formatDate(result.promise.promisedDate)}`, "Isso não representa pagamento."] });
     });
   }
 
   async function submitReport(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!conversation || !selectedDebt) return;
-    const data = new FormData(event.currentTarget);
-    const localValue = String(data.get("reportedAt"));
-    const reportedAt = new Date(localValue).toISOString();
+    event.preventDefault(); if (!conversation || !selectedDebt) return;
+    const reportedAt = new Date(String(new FormData(event.currentTarget).get("reportedAt"))).toISOString();
     const scope = `report:${conversation.id}:${selectedDebt.debtRef}`;
     await run(async () => {
-      const result = await reportPayment({
-        conversationId: conversation.id,
-        debtRef: selectedDebt.debtRef,
-        reportedAt,
-        idempotencyKey: getIntentKey(scope, reportedAt),
-      });
-      terminalIntent(scope);
-      setReceipt({
-        title: "Pagamento apenas informado",
-        lines: [
-          `Declarado pelo usuário: ${new Date(result.report.reportedAt).toLocaleString("pt-BR")}`,
-          `Recebido pelo sistema: ${new Date(result.report.receivedAt).toLocaleString("pt-BR")}`,
-          result.report.warning,
-        ],
-      });
+      const result = await reportPayment({ conversationId: conversation.id, debtRef: selectedDebt.debtRef, reportedAt, idempotencyKey: getIntentKey(scope, reportedAt) });
+      clearIntentKey(scope); setReceipt({ title: "Pagamento informado", lines: [result.report.warning, "A informação permanece pendente de análise."] });
     });
   }
 
   async function submitDispute(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!conversation || !selectedDebt) return;
-    const data = new FormData(event.currentTarget);
-    const reasonCode = String(data.get("reasonCode"));
-    const description = String(data.get("description") ?? "").trim();
-    const scope = `dispute:${conversation.id}:${selectedDebt.debtRef}`;
-    const fingerprint = JSON.stringify({ reasonCode, description });
+    event.preventDefault(); if (!conversation || !selectedDebt) return;
+    const data = new FormData(event.currentTarget); const reasonCode = String(data.get("reasonCode")); const description = String(data.get("description") ?? "").trim();
+    const scope = `dispute:${conversation.id}:${selectedDebt.debtRef}`; const fingerprint = JSON.stringify({ reasonCode, description });
     await run(async () => {
-      const result = await openDispute({
-        conversationId: conversation.id,
-        debtRef: selectedDebt.debtRef,
-        reasonCode,
-        description: description || undefined,
-        idempotencyKey: getIntentKey(scope, fingerprint),
-      });
-      terminalIntent(scope);
-      event.currentTarget.reset();
-      setReceipt({
-        title: "Contestação registrada para análise",
-        lines: [
-          `Motivo: ${result.dispute.reasonCode}`,
-          "Situação: pendente de análise. Nenhuma decisão foi tomada automaticamente.",
-        ],
-      });
+      const result = await openDispute({ conversationId: conversation.id, debtRef: selectedDebt.debtRef, reasonCode, description: description || undefined, idempotencyKey: getIntentKey(scope, fingerprint) });
+      clearIntentKey(scope); setReceipt({ title: "Contestação registrada", lines: [`Situação: ${result.dispute.status}.`, "A solicitação depende de análise."] });
     });
   }
 
-  const step = useMemo(() => {
-    if (!conversation) return 1;
-    if (conversation.identityStatus !== "VERIFIED") return 2;
-    if (!selectedDebt) return 3;
-    return 4;
-  }, [conversation, selectedDebt]);
+  async function finishConversation(choice: Exclude<TerminalChoice, null>) {
+    if (!conversation) return;
+    await run(async () => {
+      const result = choice === "OPT_OUT" ? await optOutConversation(conversation.id) : await closeConversation(conversation.id);
+      setConversation(result.conversation); setTerminalChoice(null);
+    });
+  }
+
+  const progress = useMemo(() => {
+    if (!conversation) return { current: 1, label: "Boas-vindas" };
+    if (conversation.identityStatus === "NOT_STARTED") return { current: 2, label: "Identificação" };
+    if (conversation.identityStatus === "PENDING") return { current: 3, label: "Validação" };
+    if (!selectedDebt) return { current: 4, label: "Escolha da dívida" };
+    if (acceptanceId) return { current: 8, label: "Próximos passos" };
+    if (journeyView === "DETAIL") return { current: 5, label: "Detalhes" };
+    if (journeyView === "OFFERS") return { current: 6, label: "Propostas" };
+    return { current: 7, label: "Revisão" };
+  }, [acceptanceId, conversation, journeyView, selectedDebt]);
+
+  const assistantContext = !conversation || conversation.identityStatus !== "VERIFIED" ? "IDENTITY"
+    : !selectedDebt ? "DEBT_LIST" : acceptanceId ? "ACCEPTED" : selectedOffer ? "OFFER_REVIEW" : "DEBT_DETAIL";
+
+  function goBack() {
+    if (journeyView === "REVIEW") { setJourneyView("OFFERS"); return; }
+    if (journeyView === "OFFERS") { setJourneyView("DETAIL"); return; }
+    setSelectedDebt(null); setSelectedOffer(null); setReceipt(null);
+  }
 
   return (
-    <main className="demo-page">
-      <div className="demo-ribbon" role="status">
-        DEMONSTRAÇÃO · DADOS FICTÍCIOS · SEM VALOR FINANCEIRO
+    <main className="guided-page">
+      <header className="guided-header"><a className="brand" href={`/demo/${encodeURIComponent(slug)}`}><span className="brand-mark" aria-hidden="true">E</span><span>ENKI <strong>Collections</strong></span></a><span>Demonstração · sem valor financeiro</span></header>
+      <div className="guided-layout">
+        <section className="journey-shell" aria-label="Jornada de negociação demonstrativa">
+          <div className="journey-progress"><span>Etapa {progress.current} de 8</span><strong>{progress.label}</strong><div><i style={{ width: `${progress.current * 12.5}%` }} /></div></div>
+          {error && <div className="journey-alert" role="alert"><strong>Não foi possível continuar</strong><p>{error}</p></div>}
+          {busy && <div className="journey-loading" role="status">Carregando esta etapa…</div>}
+
+          {!conversation && <section className="journey-card welcome-step"><p className="journey-kicker">Bem-vindo à ENKI</p><h1>Resolva tudo em etapas simples.</h1><p>Consulte uma dívida fictícia, veja propostas autorizadas e escolha como deseja continuar. Nenhum pagamento real será realizado.</p><div className="demo-identifier"><span>Identificador para teste</span><strong>DEMO-AURORA-001</strong></div><button className="journey-primary" disabled={busy} onClick={() => void start()}>Começar demonstração</button></section>}
+
+          {conversation && terminal && <section className="journey-card"><h1>{conversation.state === "OPTED_OUT" ? "Mensagens interrompidas" : "Atendimento encerrado"}</h1><p>Esta sessão foi finalizada e nenhuma nova negociação pode ser realizada nela.</p><button className="journey-secondary" onClick={() => { sessionStorage.removeItem(storageKey); location.reload(); }}>Iniciar uma nova sessão</button></section>}
+
+          {conversation?.identityStatus === "NOT_STARTED" && !terminal && <section className="journey-card"><p className="journey-kicker">Identificação fictícia</p><h1>Informe seu identificador demonstrativo</h1><p>Não use CPF, telefone, e-mail ou qualquer dado pessoal real.</p><form className="journey-form" onSubmit={submitIdentifier}><label htmlFor="demoIdentifier">Identificador</label><input id="demoIdentifier" value={identifier} onChange={(event) => setIdentifier(event.target.value.toUpperCase())} pattern="DEMO-[A-Z0-9]{2,16}-[A-Z0-9]{3,8}" maxLength={48} required /><button className="journey-primary" disabled={busy}>Continuar</button></form></section>}
+
+          {conversation?.identityStatus === "PENDING" && challenge && !terminal && <section className="journey-card"><p className="journey-kicker">Validação simulada</p><h1>{challenge.prompt}</h1><p>Escolha uma resposta. Restam {challenge.attemptsRemaining} tentativa(s).</p><form className="journey-form" onSubmit={submitChallenge}><fieldset><legend>Opções de resposta</legend>{challenge.options.map((option) => <label className="journey-choice" key={option.optionRef}><input type="radio" name="challenge" checked={selectedOption === option.optionRef} onChange={() => setSelectedOption(option.optionRef)} /><span>{option.label}</span></label>)}</fieldset><button className="journey-primary" disabled={busy || !selectedOption}>Validar identidade</button></form></section>}
+
+          {conversation?.identityStatus === "BLOCKED" && !terminal && <section className="journey-card"><h1>Validação bloqueada</h1><p>O limite de tentativas foi atingido. Nenhuma dívida foi exibida.</p></section>}
+
+          {conversation?.identityStatus === "VERIFIED" && !selectedDebt && !terminal && <section className="journey-card"><p className="journey-kicker">Identidade validada</p><h1>Escolha uma dívida</h1><p>Veja apenas o essencial. Os detalhes aparecem na próxima etapa.</p><div className="debt-list">{creditors.flatMap((creditor) => creditor.debts.map((debt) => <article className="guided-debt" key={debt.debtRef}><span>{creditor.displayName}</span><h2>{debt.description}</h2><dl><div><dt>Valor</dt><dd>{formatMoney(debt.amount.amountInCents)}</dd></div><div><dt>Vencimento</dt><dd>{formatDate(debt.dueDate)}</dd></div><div><dt>Situação</dt><dd>{debt.status === "OPEN" ? "Em aberto" : debt.status}</dd></div></dl><button className="journey-primary" disabled={busy} onClick={() => void selectDebt(debt.debtRef)}>Ver opções</button></article>))}{creditors.length === 0 && <p>Nenhuma dívida demonstrativa disponível.</p>}</div></section>}
+
+          {conversation?.identityStatus === "VERIFIED" && selectedDebt && journeyView === "DETAIL" && !terminal && <section className="journey-card"><button className="journey-back" onClick={goBack}>← Voltar</button><p className="journey-kicker">Detalhes da dívida</p><h1>{selectedDebt.description}</h1><div className="debt-summary"><span>{selectedDebt.creditor?.displayName}</span><strong>{formatMoney(selectedDebt.amount.amountInCents)}</strong><p>Vencimento em {formatDate(selectedDebt.dueDate)} · Situação em aberto</p></div><p>Confira as informações antes de ver as propostas autorizadas.</p><button className="journey-primary" onClick={() => setJourneyView("OFFERS")}>Ver propostas</button></section>}
+
+          {conversation?.identityStatus === "VERIFIED" && selectedDebt && journeyView === "OFFERS" && !acceptanceId && !terminal && <section className="journey-card"><button className="journey-back" onClick={goBack}>← Voltar</button><p className="journey-kicker">Propostas autorizadas</p><h1>Escolha uma proposta</h1><p>Compare as condições disponíveis. A ENKI não recomenda uma opção como melhor.</p><div className="guided-offers">{offers.map((offer) => <article className="guided-offer" key={offer.offerRef}><span>{offer.terms.kind === "CASH" ? "À vista" : "Parcelada"}</span><strong>{formatMoney(offer.terms.total.amountInCents)}</strong><dl><div><dt>Entrada</dt><dd>{formatMoney(offer.terms.downPayment.amountInCents)}</dd></div><div><dt>Parcelas</dt><dd>{offer.terms.installmentCount} de {formatMoney(offer.terms.installmentAmount.amountInCents)}</dd></div><div><dt>Primeiro vencimento</dt><dd>{formatDate(offer.terms.firstDueDate)}</dd></div><div><dt>Validade</dt><dd>{formatDate(offer.expiresAt)}</dd></div></dl><button className="journey-primary" disabled={busy || offer.status !== "AVAILABLE"} onClick={() => { setSelectedOffer(offer); setJourneyView("REVIEW"); }}>Escolher esta proposta</button></article>)}</div></section>}
+
+          {conversation?.identityStatus === "VERIFIED" && selectedDebt && selectedOffer && journeyView === "REVIEW" && !acceptanceId && !terminal && <section className="journey-card"><button className="journey-back" onClick={goBack}>← Voltar</button><p className="journey-kicker">Revisão</p><h1>Revise antes de confirmar</h1><div className="review-summary"><div><span>Dívida</span><strong>{selectedDebt.description}</strong></div><div><span>Credor</span><strong>{selectedDebt.creditor?.displayName}</strong></div><div><span>Proposta</span><strong>{selectedOffer.terms.kind === "CASH" ? "À vista" : "Parcelada"} · {formatMoney(selectedOffer.terms.total.amountInCents)}</strong></div><div><span>Entrada</span><strong>{formatMoney(selectedOffer.terms.downPayment.amountInCents)}</strong></div><div><span>Parcelas</span><strong>{selectedOffer.terms.installmentCount} de {formatMoney(selectedOffer.terms.installmentAmount.amountInCents)}</strong></div><div><span>Primeiro vencimento</span><strong>{formatDate(selectedOffer.terms.firstDueDate)}</strong></div></div><div className="demo-warning"><strong>DEMONSTRAÇÃO — SEM VALOR FINANCEIRO</strong><p>Confirmar registra apenas um aceite fictício. Não ocorre pagamento nem quitação.</p></div><button className="journey-primary" disabled={busy} onClick={() => void confirmAcceptance()}>Confirmar proposta</button><button className="journey-secondary" onClick={goBack}>Voltar</button></section>}
+
+          {acceptanceId && selectedDebt && <section className="journey-card"><p className="journey-kicker">Próximos passos</p><h1>Proposta confirmada</h1><p>O aceite demonstrativo foi registrado. Agora você pode visualizar um instrumento fictício, sem possibilidade de pagamento.</p>{receipt && <div className="journey-success" role="status"><strong>{receipt.title}</strong>{receipt.lines.map((line) => <p key={line}>{line}</p>)}</div>}<div className="instrument-actions"><button className="journey-primary" onClick={() => void requestInstrument("DEMO_LINK")}>Gerar link demonstrativo</button><button className="journey-secondary" onClick={() => void requestInstrument("DEMO_BOLETO")}>Ver boleto fictício</button><button className="journey-secondary" onClick={() => void requestInstrument("DEMO_PIX")}>Ver Pix fictício</button></div>{instrument && <div className="guided-instrument"><strong>{instrument.warning}</strong><pre>{instrument.displayValue}</pre><p>Conteúdo apenas em texto. Não é pagável nem executável.</p></div>}</section>}
+
+          {selectedDebt && !terminal && <details className="other-options"><summary>Outras opções</summary><div><form onSubmit={submitPromise}><h2>Promessa de pagamento</h2><p>Registre uma intenção futura. Não é pagamento.</p><label htmlFor="promisedDate">Data prometida</label><input id="promisedDate" name="promisedDate" type="date" required /><button disabled={busy}>Registrar promessa</button></form><form onSubmit={submitReport}><h2>Informar pagamento</h2><p>A informação ficará pendente de análise.</p><label htmlFor="reportedAt">Data e hora informadas</label><input id="reportedAt" name="reportedAt" type="datetime-local" required /><button disabled={busy}>Informar pagamento</button></form><form onSubmit={submitDispute}><h2>Contestar dívida</h2><p>A contestação não será decidida automaticamente.</p><label htmlFor="reasonCode">Motivo</label><select id="reasonCode" name="reasonCode" defaultValue="" required><option value="" disabled>Selecione</option><option value="NOT_RECOGNIZED">Não reconheço</option><option value="AMOUNT_INCORRECT">Valor incorreto</option><option value="ALREADY_PAID">Já informei pagamento</option><option value="OTHER">Outro</option></select><label htmlFor="description">Descrição opcional</label><textarea id="description" name="description" maxLength={300} rows={2} /><button disabled={busy}>Registrar contestação</button></form></div></details>}
+
+          {humanRequested && <div className="human-note" role="status"><strong>Solicitação anotada nesta sessão demonstrativa.</strong><p>Ainda não existe integração com atendimento humano e nenhuma transferência real foi iniciada.</p></div>}
+          {conversation && !terminal && <div className="journey-utilities"><button onClick={() => setAssistantOpen(true)}>Tirar dúvidas com assistente virtual</button><button onClick={() => setHumanRequested(true)}>Solicitar atendimento humano</button><button onClick={() => setTerminalChoice("OPT_OUT")}>Interromper mensagens</button><button onClick={() => setTerminalChoice("CLOSE")}>Encerrar atendimento</button></div>}
+          <footer>Ambiente demonstrativo · dados fictícios · v{version}</footer>
+        </section>
+
+        <GuidedAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} conversation={conversation} selectedDebtRef={selectedDebt?.debtRef} selectedOfferRef={selectedOffer?.offerRef} uiContext={assistantContext} />
       </div>
-      <header className="demo-header">
-        <a className="brand" href={`/demo/${encodeURIComponent(slug)}`}>
-          <span className="brand-mark" aria-hidden="true">E</span>
-          <span>ENKI <strong>Collections</strong></span>
-        </a>
-        <span className="environment-chip">Ambiente seguro de demonstração</span>
-      </header>
-
-      <section className="hero">
-        <div>
-          <p className="eyebrow">ENKI Collections</p>
-          <h1>Negociação digital simples, segura e disponível a qualquer hora.</h1>
-          <p>
-            Consulte pendências, entenda propostas e registre suas decisões em uma experiência guiada.
-          </p>
-        </div>
-        <div className="trust-card">
-          <span aria-hidden="true">✓</span>
-          <div><strong>Dados inteiramente fictícios</strong><br />Nenhum pagamento real será realizado.</div>
-        </div>
-      </section>
-
-      <nav className="stepper" aria-label="Etapas da demonstração">
-        {["Início", "Identidade", "Dívidas", "Negociação"].map((label, index) => (
-          <div className={step >= index + 1 ? "step active" : "step"} key={label}>
-            <span>{index + 1}</span><small>{label}</small>
-          </div>
-        ))}
-      </nav>
-
-      {error && <div className="alert error" role="alert">{error}</div>}
-      {busy && <div className="loading" role="status">Processando com segurança…</div>}
-
-      {!conversation && (
-        <section className="panel landing-panel commercial-start">
-          <div>
-            <p className="eyebrow">Experiência guiada</p>
-            <h2>Veja a jornada completa em poucos minutos.</h2>
-            <p>Use o identificador <strong className="inline-demo-id">DEMO-AURORA-001</strong>. Nenhum dado pessoal é necessário.</p>
-          </div>
-          <div className="landing-actions">
-            <a className="button primary" href={`/demo/${encodeURIComponent(slug)}/chat`}>Iniciar atendimento</a>
-            <button className="button quiet" onClick={start} disabled={busy}>Conhecer o portal</button>
-          </div>
-        </section>
-      )}
-
-      {conversation && terminal && (
-        <section className="panel narrow blocked" role="status">
-          <p className="eyebrow">Estado terminal</p>
-          <h2>{conversation.state === "OPTED_OUT" ? "Mensagens interrompidas" : "Conversa encerrada"}</h2>
-          <p>Nenhuma operação de negociação adicional é permitida nesta sessão.</p>
-        </section>
-      )}
-
-      {conversation?.identityStatus === "NOT_STARTED" && !terminal && (
-        <section className="panel narrow">
-          <p className="eyebrow">Identificação fictícia</p>
-          <h2>Qual identificador DEMO deseja usar?</h2>
-          <p className="muted">Não informe CPF, telefone, e-mail ou qualquer dado pessoal real.</p>
-          <form onSubmit={submitIdentifier} className="form-stack">
-            <label htmlFor="demoIdentifier">Identificador demonstrativo</label>
-            <input id="demoIdentifier" value={identifier} onChange={(e) => setIdentifier(e.target.value.toUpperCase())} pattern="DEMO-[A-Z0-9]{2,16}-[A-Z0-9]{3,8}" maxLength={48} required />
-            <button className="button primary" disabled={busy}>Continuar com dados fictícios</button>
-          </form>
-        </section>
-      )}
-
-      {conversation?.identityStatus === "PENDING" && challenge && !terminal && (
-        <section className="panel narrow">
-          <p className="eyebrow">Validação simulada</p>
-          <h2>{challenge.prompt}</h2>
-          <p className="attempts">{challenge.attemptsRemaining} tentativa(s) restante(s)</p>
-          <form onSubmit={submitChallenge} className="form-stack">
-            <fieldset>
-              <legend>Selecione uma opção</legend>
-              {challenge.options.map((option) => (
-                <label className="choice" key={option.optionRef}>
-                  <input type="radio" name="challenge" value={option.optionRef} checked={selectedOption === option.optionRef} onChange={() => setSelectedOption(option.optionRef)} />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </fieldset>
-            <button className="button primary" disabled={busy || !selectedOption}>Validar identidade fictícia</button>
-          </form>
-        </section>
-      )}
-
-      {conversation?.identityStatus === "BLOCKED" && !terminal && (
-        <section className="panel narrow blocked" role="alert">
-          <p className="eyebrow">Sessão protegida</p>
-          <h2>Validação bloqueada</h2>
-          <p>O limite de três tentativas foi atingido. Nenhuma dívida foi revelada.</p>
-        </section>
-      )}
-
-      {conversation?.identityStatus === "VERIFIED" && !selectedDebt && !terminal && (
-        <section>
-          <div className="section-heading">
-            <div><p className="eyebrow">Identidade validada</p><h2>Dívidas fictícias por credor</h2></div>
-            <span className="safe-badge">✓ Acesso demonstrativo validado</span>
-          </div>
-          <div className="creditor-grid">
-            {creditors.map((creditor) => (
-              <article className="creditor-card" key={creditor.creditorRef}>
-                <div className="creditor-title"><span aria-hidden="true">◆</span><h3>{creditor.displayName}</h3></div>
-                {creditor.debts.map((debt) => (
-                  <div className="debt-row" key={debt.debtRef}>
-                    <div><strong>{debt.description}</strong><small>Vencimento: {formatDate(debt.dueDate)}</small></div>
-                    <div className="debt-value"><strong>{formatMoney(debt.amount.amountInCents)}</strong><button className="button secondary" onClick={() => selectDebt(debt.debtRef)}>Ver opções</button></div>
-                  </div>
-                ))}
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {conversation?.identityStatus === "VERIFIED" && selectedDebt && !terminal && (
-        <section className="negotiation">
-          <button className="back-button" onClick={() => { setSelectedDebt(null); setSelectedOffer(null); setReceipt(null); }}>← Voltar às dívidas</button>
-          <div className="detail-header">
-            <div><p className="eyebrow">{selectedDebt.creditor?.displayName}</p><h2>{selectedDebt.description}</h2><p>Vencimento: {formatDate(selectedDebt.dueDate)}</p></div>
-            <div className="amount-card"><small>Valor da dívida demonstrativa</small><strong>{formatMoney(selectedDebt.amount.amountInCents)}</strong></div>
-          </div>
-
-          <h3>Propostas previamente autorizadas</h3>
-          <p className="muted">A validade exibida é apenas orientativa e será confirmada ao revisar a proposta.</p>
-          <div className="offers-grid">
-            {offers.map((offer) => (
-              <article className={selectedOffer?.offerRef === offer.offerRef ? "offer-card selected" : "offer-card"} key={offer.offerRef}>
-                <span className="offer-kind">{offer.terms.kind === "CASH" ? "À vista" : "Parcelado"}</span>
-                <strong className="offer-total">{formatMoney(offer.terms.total.amountInCents)}</strong>
-                <dl>
-                  <div><dt>Entrada</dt><dd>{formatMoney(offer.terms.downPayment.amountInCents)}</dd></div>
-                  <div><dt>Parcelas</dt><dd>{offer.terms.installmentCount} × {formatMoney(offer.terms.installmentAmount.amountInCents)}</dd></div>
-                  <div><dt>Primeiro vencimento</dt><dd>{formatDate(offer.terms.firstDueDate)}</dd></div>
-                </dl>
-                <button className="button secondary" disabled={offer.status !== "AVAILABLE"} onClick={() => setSelectedOffer(offer)}>
-                  {offer.status === "AVAILABLE" ? "Revisar proposta" : "Proposta expirada"}
-                </button>
-              </article>
-            ))}
-          </div>
-
-          {selectedOffer && (
-            <section className="review-box">
-              <p className="eyebrow">Confirmação consciente</p>
-              <h3>Revise antes do aceite demonstrativo</h3>
-              <p>Total: <strong>{formatMoney(selectedOffer.terms.total.amountInCents)}</strong>. Nenhum pagamento será realizado agora.</p>
-              <button className="button primary" onClick={confirmAcceptance} disabled={busy}>Aceitar proposta demonstrativa</button>
-            </section>
-          )}
-
-          {acceptanceId && (
-            <section className="instrument-box">
-              <h3>Gerar instrumento não pagável</h3>
-              <p>Escolha apenas para visualizar. Nenhuma opção permite pagamento.</p>
-              <div className="button-row">
-                <button className="button secondary" onClick={() => requestInstrument("DEMO_LINK")}>Link demo</button>
-                <button className="button secondary" onClick={() => requestInstrument("DEMO_BOLETO")}>Boleto demo</button>
-                <button className="button secondary" onClick={() => requestInstrument("DEMO_PIX")}>Pix demo</button>
-              </div>
-              {instrument && (
-                <div className="instrument-output">
-                  <strong>{instrument.warning}</strong>
-                  <code>{instrument.displayValue}</code>
-                  <small>Conteúdo exibido somente como texto. Não é clicável, executável ou pagável.</small>
-                </div>
-              )}
-            </section>
-          )}
-
-          <div className="actions-grid">
-            <form className="action-card" onSubmit={submitPromise}>
-              <h3>Promessa de pagamento</h3>
-              <p>Registre uma intenção futura. Isso não representa pagamento.</p>
-              <label htmlFor="promisedDate">Data prometida</label>
-              <input id="promisedDate" name="promisedDate" type="date" required />
-              <button className="button secondary">Registrar promessa</button>
-            </form>
-            <form className="action-card" onSubmit={submitReport}>
-              <h3>Informar pagamento</h3>
-              <p>A informação ficará pendente de análise, sem quitação automática.</p>
-              <label htmlFor="reportedAt">Data e hora declaradas</label>
-              <input id="reportedAt" name="reportedAt" type="datetime-local" required />
-              <button className="button secondary">Informar, sem confirmar</button>
-            </form>
-            <form className="action-card" onSubmit={submitDispute}>
-              <h3>Contestar dívida</h3>
-              <p>Não inclua documentos, dados bancários ou informações pessoais.</p>
-              <label htmlFor="reasonCode">Motivo</label>
-              <select id="reasonCode" name="reasonCode" required defaultValue="">
-                <option value="" disabled>Selecione</option>
-                <option value="NOT_RECOGNIZED">Não reconheço</option>
-                <option value="AMOUNT_INCORRECT">Valor incorreto</option>
-                <option value="ALREADY_PAID">Pagamento já realizado</option>
-                <option value="OTHER">Outro</option>
-              </select>
-              <label htmlFor="description">Descrição opcional (máx. 300)</label>
-              <textarea id="description" name="description" maxLength={300} rows={3} />
-              <button className="button secondary">Registrar contestação</button>
-            </form>
-          </div>
-        </section>
-      )}
-
-      {receipt && (
-        <aside className="receipt" role="status">
-          <span aria-hidden="true">✓</span>
-          <div><h3>{receipt.title}</h3>{receipt.lines.map((line) => <p key={line}>{line}</p>)}</div>
-        </aside>
-      )}
-
-      <footer>
-        <strong>DEMONSTRAÇÃO — SEM VALOR FINANCEIRO</strong>
-        <span>
-          Sem IA · Sem WhatsApp · Sem integração financeira real · v{version}
-        </span>
-      </footer>
+      {terminalChoice && <div className="guided-dialog" role="dialog" aria-modal="true" aria-labelledby="terminal-heading"><div><h2 id="terminal-heading">{terminalChoice === "OPT_OUT" ? "Interromper mensagens?" : "Encerrar atendimento?"}</h2><p>Esta ação encerra a sessão e não pode ser desfeita.</p><button autoFocus className="journey-primary" onClick={() => void finishConversation(terminalChoice)}>Confirmar</button><button className="journey-secondary" onClick={() => setTerminalChoice(null)}>Voltar</button></div></div>}
+      <button className="assistant-launcher" disabled={!conversation || terminal} onClick={() => setAssistantOpen(true)}>Tirar dúvidas</button>
     </main>
   );
 }

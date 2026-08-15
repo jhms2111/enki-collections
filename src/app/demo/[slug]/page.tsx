@@ -6,12 +6,5 @@ export default async function DemoPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return (
-    <>
-      <a className="chat-entry" href={`/demo/${encodeURIComponent(slug)}/chat`}>
-        Abrir webchat demonstrativo
-      </a>
-      <DemoExperience slug={slug} version={process.env.DEMO_VERSION ?? "local"} />
-    </>
-  );
+  return <DemoExperience slug={slug} version={process.env.DEMO_VERSION ?? "local"} />;
 }
