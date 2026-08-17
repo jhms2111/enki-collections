@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { scrollChatEnd, shouldSubmitComposerKey } from "@/modules/webchat/deterministic-webchat";
+import {
+  clearPreviousJourneyReference,
+  scrollChatEnd,
+  secureJourneyPath,
+  shouldSubmitComposerKey,
+} from "@/modules/webchat/deterministic-webchat";
 
 describe("deterministic webchat scrolling", () => {
   it("does not call a missing optional scrollIntoView implementation", () => {
@@ -29,5 +34,19 @@ describe("webchat composer keyboard", () => {
 
   it("does not submit for other keys", () => {
     expect(shouldSubmitComposerKey(" ", false)).toBe(false);
+  });
+});
+
+describe("secure journey handoff", () => {
+  it("uses only the generic public journey path", () => {
+    expect(secureJourneyPath()).toBe("/demo/jf-demo");
+    expect(secureJourneyPath()).not.toMatch(/[?#]|DEMO-|conv_|debt|offer|token/i);
+  });
+
+  it("removes only the prior journey reference before navigation", () => {
+    const removeItem = vi.fn();
+    clearPreviousJourneyReference({ removeItem });
+    expect(removeItem).toHaveBeenCalledOnce();
+    expect(removeItem).toHaveBeenCalledWith("enki-demo:conversation:jf-demo");
   });
 });

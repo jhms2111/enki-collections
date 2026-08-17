@@ -4,18 +4,40 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const chatSource = readFileSync(resolve("src/modules/webchat/deterministic-webchat.tsx"), "utf8");
+const journeySource = readFileSync(resolve("src/modules/demo-ui/demo-experience.tsx"), "utf8");
 const styles = readFileSync(resolve("src/app/globals.css"), "utf8");
 
 describe("public webchat presentation", () => {
-  it("keeps opt-out and explicit confirmations in the transcript", () => {
+  it("keeps only communication controls in the transcript", () => {
     expect(chatSource).toContain("Interromper mensagens");
-    expect(chatSource).toContain("Confirmar aceite demonstrativo");
-    expect(chatSource).toContain("Confirmar promessa");
-    expect(chatSource).toContain("Confirmar contestação");
+    expect(chatSource).toContain("Encerrar este atendimento?");
+    expect(chatSource).not.toMatch(/acceptOffer|createInstrument|registerPromise|reportPayment|openDispute/);
+    expect(chatSource).not.toMatch(/Confirmar aceite|Confirmar promessa|Confirmar contesta/);
+  });
+
+  it("offers a generic, context-free link to the secure journey", () => {
+    expect(chatSource).toContain("Acessar negociação e pagamento");
+    expect(chatSource).toContain('return "/demo/jf-demo"');
+    expect(chatSource).not.toMatch(/href=.*(conversationId|debtRef|offerRef|acceptanceId|identifier)/);
+    expect(chatSource).toContain("precisará informar novamente seu identificador e validar sua identidade");
+  });
+
+  it("keeps debt and offer selection informational", () => {
+    expect(chatSource).toContain("getDebt");
+    expect(chatSource).toContain("listOffers");
+    expect(chatSource).toContain("selecionada apenas para explicação");
+    expect(chatSource).toContain("Nenhuma decisão foi registrada");
+  });
+
+  it("preserves all mutable operations exclusively in the guided journey", () => {
+    for (const operation of ["acceptOffer", "createInstrument", "registerPromise", "reportPayment", "openDispute"]) {
+      expect(journeySource).toContain(operation);
+      expect(chatSource).not.toContain(operation);
+    }
   });
 
   it("prevents duplicate composer submissions while busy", () => {
-    expect(chatSource).toContain("if (busy) return;");
+    expect(chatSource).toContain("if (busy || !conversation) return;");
     expect(chatSource).toContain("disabled={busy || !composerText.trim()}");
   });
 
@@ -33,7 +55,6 @@ describe("public webchat presentation", () => {
   });
 
   it("does not expose technical vocabulary in visible copy", () => {
-    const jsxCopy = chatSource.replace(/const fingerprint[\s\S]*?await run/g, "await run");
-    expect(jsxCopy).not.toMatch(/FACT_REF|Policy Gate|OpenAI|backend|provider|fallback/i);
+    expect(chatSource).not.toMatch(/FACT_REF|Policy Gate|OpenAI|backend|provider|fallback/i);
   });
 });
