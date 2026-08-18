@@ -1,4 +1,4 @@
-import { DemoExperience } from "@/modules/demo-ui/demo-experience";
+import { redirect } from "next/navigation";
 
 export default async function DemoPage({
   params,
@@ -6,5 +6,5 @@ export default async function DemoPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <DemoExperience slug={slug} version={process.env.DEMO_VERSION ?? "local"} />;
+  redirect(`/demo/${encodeURIComponent(slug)}/chat`);
 }

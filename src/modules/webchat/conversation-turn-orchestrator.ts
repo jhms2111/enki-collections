@@ -8,7 +8,6 @@ import type {
 
 const mutatingIntents = new Set<ConversationalIntent>([
   "ACCEPT_OFFER",
-  "REQUEST_INSTRUMENT",
   "MAKE_PAYMENT_PROMISE",
   "REPORT_PAYMENT",
   "DISPUTE_DEBT",
@@ -187,11 +186,10 @@ export class ConversationTurnOrchestrator {
     if (turn.identityStatus === "PENDING") return new Set([...common, "VERIFY_IDENTITY"]);
     if (turn.identityStatus !== "VERIFIED") return new Set(common);
     const verified: ConversationalIntent[] = [...common, "LIST_DEBTS", "SELECT_DEBT"];
-    if (turn.uiContext !== "DEBT_LIST") verified.push("LIST_OFFERS", "SELECT_OFFER");
+    if (turn.uiContext !== "DEBT_LIST") verified.push("LIST_OFFERS", "SELECT_OFFER", "REQUEST_INSTRUMENT");
     if (turn.uiContext === "OFFER_REVIEW" || turn.uiContext === "ACCEPTED") {
       verified.push("ACCEPT_OFFER");
     }
-    if (turn.uiContext === "ACCEPTED") verified.push("REQUEST_INSTRUMENT");
     if (["DEBT_DETAIL", "OFFER_REVIEW", "ACCEPTED"].includes(turn.uiContext)) {
       verified.push("MAKE_PAYMENT_PROMISE", "REPORT_PAYMENT", "DISPUTE_DEBT");
     }
@@ -209,15 +207,49 @@ export class ConversationTurnOrchestrator {
     if (turn.conversationState === "CLOSED") {
       return this.fallbackResult("UNKNOWN", "Esta conversa está encerrada e não será reaberta.", reason);
     }
-    const localIntent = interpretSafeChatText(turn.message);
+    const contextual = this.contextualFallback(turn, reason, technical);
+    if (contextual) return contextual;
+    const classifiedIntent = interpretSafeChatText(turn.message);
+    const localIntent = this.allowedIntents(turn).has(classifiedIntent) ? classifiedIntent : "UNKNOWN";
     const message = localIntent === "HELP"
-      ? "Use os botões para avançar com segurança. Texto livre nunca confirma uma operação."
+      ? "Posso explicar o valor, o vencimento, as propostas ou como realizar o pagamento."
       : localIntent === "LIST_DEBTS" && turn.identityStatus === "VERIFIED"
-        ? "As dívidas demonstrativas disponíveis estão nos botões abaixo."
+        ? "Posso apresentar as dívidas demonstrativas disponíveis após a validação da identidade."
         : localIntent === "LIST_OFFERS" && turn.uiContext !== "DEBT_LIST"
-          ? "As propostas previamente autorizadas estão nos botões abaixo."
-          : "Não entendi com segurança. Escolha uma das opções exibidas; nenhuma ação foi executada.";
-    return this.fallbackResult(localIntent, message, reason, technical);
+          ? "Posso apresentar as propostas previamente autorizadas para esta dívida."
+          : "Não consegui entender. Você pode perguntar sobre o valor, vencimento, propostas ou como realizar o pagamento.";
+    const confirmationMessages: Partial<Record<ConversationalIntent, string>> = {
+      ACCEPT_OFFER: "Preparei a revisão da proposta. Confirme no botão somente depois de conferir os termos.",
+      REQUEST_INSTRUMENT: turn.hasCurrentAcceptance
+        ? "A proposta já foi aceita. Posso encaminhar você à página demonstrativa de pagamento."
+        : "Primeiro escolha uma proposta autorizada e confirme o aceite. Depois disso, a página demonstrativa de pagamento ficará disponível.",
+      MAKE_PAYMENT_PROMISE: "Informe a data e confirme no botão. A promessa não representa pagamento.",
+      REPORT_PAYMENT: "Informe quando o pagamento teria sido realizado e confirme no botão. Isso não confirma quitação.",
+      DISPUTE_DEBT: "Informe o motivo e confirme no botão. A contestação ficará pendente de análise.",
+      CLOSE: "Confirme no botão se deseja encerrar esta conversa.",
+      OPT_OUT: "Confirme no botão se deseja interromper as mensagens.",
+    };
+    return this.fallbackResult(localIntent, confirmationMessages[localIntent] ?? message, reason, technical);
+  }
+
+  private contextualFallback(turn: NormalizedInboundTurn, reason: string, technical: Pick<BotTurn, "model" | "usage" | "failureCategory">): BotTurn | null {
+    if (turn.identityStatus !== "VERIFIED") return null;
+    const normalized = turn.message.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const facts = new Map(turn.canonicalFacts.map((fact) => [fact.key, fact.displayText]));
+    const continuation = /^(?:sim(?:,?\s+me\s+explique)?|me\s+explique|continue|como\s+faco\s+isso)[.!?]*$/.test(normalized);
+    const paymentQuestion = /(?:como\s+seria.*pagamento|onde.*(?:pagamento|pago|pagar)|como\s+faco\s+para\s+pagar|quero\s+pagar|manda.*link|boleto|pix)/.test(normalized) || (continuation && turn.lastSubject === "REQUEST_INSTRUMENT");
+    if (paymentQuestion) return this.fallbackResult("REQUEST_INSTRUMENT", turn.hasCurrentAcceptance
+      ? "Sua proposta demonstrativa foi aceita. Acesse a página de pagamento para revisar as condições e escolher uma opção. Esta demonstração não realiza pagamento real nem representa quitação."
+      : "Para continuar, consulte uma proposta autorizada, escolha a condição desejada e confirme o aceite. A página demonstrativa de pagamento ficará disponível somente depois dessa confirmação.", reason, technical);
+    if (!facts.has("debt_amount")) return continuation ? this.fallbackResult("HELP", "Selecione uma dívida para que eu possa continuar a explicação.", reason, technical) : null;
+    const asksAmount = /\b(valor|quanto)\b/.test(normalized);
+    const asksDue = /\b(vencimento|vence|venca)\b/.test(normalized);
+    if (asksAmount || asksDue) return this.fallbackResult("HELP", [asksAmount ? facts.get("debt_amount") : null, asksDue ? facts.get("debt_due_date") : null].filter(Boolean).join(" "), reason, technical);
+    if (/\b(explicacao|explicacaco|explique|explicar|explica|nao entendi|como funciona)\b/.test(normalized) || (continuation && ["LIST_DEBTS", "SELECT_DEBT", "HELP"].includes(turn.lastSubject ?? ""))) {
+      return this.fallbackResult("HELP", ["debt_creditor", "debt_description", "debt_amount", "debt_due_date", "debt_status"].map((key) => facts.get(key)).filter(Boolean).join(" "), reason, technical);
+    }
+    if (/\b(parcelas?|entrada)\b/.test(normalized) && facts.has("offer_total")) return this.fallbackResult("HELP", ["offer_kind", "offer_total", "offer_down_payment", "offer_installment_count", "offer_installment_amount", "offer_first_due_date"].map((key) => facts.get(key)).filter(Boolean).join(" "), reason, technical);
+    return null;
   }
 
   private fallbackResult(
@@ -230,7 +262,7 @@ export class ConversationTurnOrchestrator {
       intent,
       message,
       suggestedActions: [],
-      requiresConfirmation: false,
+      requiresConfirmation: mutatingIntents.has(intent),
       fallbackUsed: true,
       fallbackReason: reason,
       ...technical,

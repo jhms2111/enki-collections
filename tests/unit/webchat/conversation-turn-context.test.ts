@@ -171,13 +171,7 @@ describe("canonical conversation context", () => {
       selectedDebtRef: debt.debtRef,
       selectedOfferRef: offer.offerRef,
     });
-    const turn = vi.mocked(interpret).mock.calls[0][0];
-    expect(interpret).toHaveBeenCalledOnce();
-    expect(turn.canonicalFacts.map((fact) => fact.key)).toEqual([
-      "debt_description", "debt_amount", "debt_due_date", "debt_status",
-      "offer_kind", "offer_total", "offer_down_payment", "offer_installment_count",
-      "offer_installment_amount", "offer_first_due_date", "offer_expires_at",
-    ]);
+    expect(interpret).not.toHaveBeenCalled();
     expect(debtProvider.getDebt).toHaveBeenCalledOnce();
     expect(debtProvider.getAuthorizedOffer).toHaveBeenCalledOnce();
     expect(result.message).toBe(

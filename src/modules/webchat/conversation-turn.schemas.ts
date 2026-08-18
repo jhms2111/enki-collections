@@ -35,6 +35,7 @@ export const conversationTurnPublicResponseSchema = z
     suggestedActions: z.array(z.enum(conversationalIntents)).max(4),
     requiresConfirmation: z.boolean(),
     fallbackUsed: z.boolean(),
+    quickReplies: z.array(z.string().min(1).max(80)).max(2).optional(),
   })
   .strict();
 

@@ -5,7 +5,7 @@ import { getRuntimeEnv } from "@/shared/config/env";
 
 const source: NodeJS.ProcessEnv = {
   NODE_ENV: "development",
-  APP_URL: "http://127.0.0.1:3000",
+  APP_URL: "http://localhost:3000",
   DATABASE_URL: "postgresql://demo:demo@localhost:5432/demo",
   CONVERSATION_SESSION_SECRET: "conversation-session-secret-at-least-32-characters",
   IDEMPOTENCY_HMAC_SECRET: "dedicated-idempotency-secret-at-least-sixty-four-characters-0000",

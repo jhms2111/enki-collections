@@ -19,6 +19,7 @@ const conversationInclude = {
     select: {
       externalRef: true,
       timeZone: true,
+      slug: true,
     },
   },
   messages: {
@@ -275,6 +276,22 @@ export class PrismaConversationStore implements ConversationStore {
     });
   }
 
+  async findLatestConversationalIntent(conversation: PersistedConversation): Promise<string | null> {
+    const event = await this.client.auditEvent.findFirst({
+      where: {
+        organizationId: conversation.organizationId,
+        conversationId: conversation.id,
+        eventType: "CONVERSATIONAL_INTENT_INTERPRETED",
+      },
+      orderBy: { occurredAt: "desc" },
+      select: { metadata: true },
+    });
+    if (!event || typeof event.metadata !== "object" || event.metadata === null || Array.isArray(event.metadata)) return null;
+    const metadata = event.metadata as Record<string, unknown>;
+    if (typeof metadata.subject === "string") return metadata.subject;
+    return typeof metadata.intent === "string" ? metadata.intent : null;
+  }
+
   async recordTerminalState(input: {
     conversation: PersistedConversation;
     state: "CLOSED" | "OPTED_OUT";
@@ -370,6 +387,7 @@ export class PrismaConversationStore implements ConversationStore {
       organizationId: conversation.organizationId,
       organizationExternalRef: conversation.organization.externalRef,
       organizationTimeZone: conversation.organization.timeZone,
+      organizationSlug: conversation.organization.slug,
       publicReference: conversation.publicReference,
       state: conversation.state,
       debtorRef: conversation.debtorRef,

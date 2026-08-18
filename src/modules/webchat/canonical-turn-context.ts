@@ -34,6 +34,7 @@ export function buildDebtCanonicalFacts(debt: DebtDetails): readonly CanonicalFa
       ? "contestação pendente"
       : "pagamento informado pelo provider";
   return [
+    { key: "debt_creditor", displayText: `Credor: ${debt.creditor.displayName}.` },
     { key: "debt_description", displayText: `Descrição da dívida: ${debt.description}.` },
     { key: "debt_amount", displayText: `Valor informado: ${money(debt.amount)}.` },
     { key: "debt_due_date", displayText: `Vencimento informado: ${date(debt.dueDate)}.` },

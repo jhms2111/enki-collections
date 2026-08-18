@@ -31,6 +31,7 @@ export class ConversationService {
     private readonly maxIdentityAttempts: number,
     private readonly sessionMaxAgeSeconds: number,
     private readonly now: () => Date = () => new Date(),
+    private readonly demoIdentifierOnlyOrganizations: readonly string[] = [],
   ) {}
 
   async create(slug: string) {
@@ -112,11 +113,6 @@ export class ConversationService {
         404,
       );
     }
-    const challenge = await this.debtProvider.getIdentityChallenge(
-      organization,
-      identification.identificationRef,
-    );
-
     const now = this.now();
     const updated = await this.store.recordIdentification({
       conversation,
@@ -130,6 +126,26 @@ export class ConversationService {
         occurredAt: now,
       },
     });
+
+    const demoVerifier = this.debtProvider as DebtProvider & {
+      verifyDemoIdentifierOnly?: (organization: OrganizationContext, identificationRef: string) => Promise<VerifiedDebtorContext>;
+    };
+    if (conversation.organizationSlug && this.demoIdentifierOnlyOrganizations.includes(conversation.organizationSlug)) {
+      if (!demoVerifier.verifyDemoIdentifierOnly) throw new ApplicationError("DEMO_IDENTITY_MODE_UNAVAILABLE", "O modo demonstrativo simplificado não está disponível.", 503);
+      const debtorContext = await demoVerifier.verifyDemoIdentifierOnly(organization, identification.identificationRef);
+      const verified = await this.store.recordIdentityAttempt({
+        conversation: updated,
+        verified: true,
+        verifiedDebtorRef: debtorContext.authorizedAccounts[0]?.debtorRef,
+        verifiedDebtorContext: debtorContext,
+        maxAttempts: this.maxIdentityAttempts,
+        now,
+        audit: { eventType: "DEMO_IDENTIFIER_ONLY_VERIFIED", actor: "SYSTEM", entityType: "DEMO_DEBTOR", metadata: { mode: "DEMO_IDENTIFIER_ONLY" }, occurredAt: now },
+      });
+      return { conversation: toPublicConversationDto(verified), verificationRequired: false as const, identityMode: "DEMO_IDENTIFIER_ONLY" as const };
+    }
+
+    const challenge = await this.debtProvider.getIdentityChallenge(organization, identification.identificationRef);
 
     return {
       conversation: toPublicConversationDto(updated),

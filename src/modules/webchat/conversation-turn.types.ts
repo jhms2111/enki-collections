@@ -36,6 +36,10 @@ export type NormalizedInboundTurn = Readonly<{
   identityStatus: string;
   uiContext: ConversationUiContext;
   canonicalFacts: readonly CanonicalFact[];
+  lastSubject?: string;
+  pendingOperation?: ConversationalIntent | "NONE";
+  allowedActions?: readonly ConversationalIntent[];
+  hasCurrentAcceptance?: boolean;
   safetyIdentifier?: string;
 }>;
 
@@ -51,6 +55,8 @@ export type BotTurn = Readonly<{
   usage?: Readonly<{ inputTokens: number; outputTokens: number }>;
   failureCategory?: import("./ai-operational-store").AiFailureCategory;
   storageMessage?: string;
+  subject?: string;
+  quickReplies?: readonly string[];
 }>;
 
 export interface ConversationChannelAdapter<TInput> {

@@ -2,7 +2,7 @@ import type { BotTurn } from "./conversation-turn.types";
 
 export type AiPublicResponse = Pick<
   BotTurn,
-  "intent" | "message" | "suggestedActions" | "requiresConfirmation" | "fallbackUsed"
+  "intent" | "message" | "suggestedActions" | "requiresConfirmation" | "fallbackUsed" | "quickReplies"
 >;
 
 export type AiFailureCategory =

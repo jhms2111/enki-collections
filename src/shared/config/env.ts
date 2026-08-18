@@ -9,6 +9,10 @@ const runtimeEnvSchema = z.object({
   ADMIN_DEMO_SECRET: z.string().min(32).optional(),
   CHAT_MAX_MESSAGE_LENGTH: z.coerce.number().int().positive().default(1_200),
   IDENTITY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  DEMO_IDENTIFIER_ONLY_ORGANIZATIONS: z.preprocess(
+    (value) => value === "" || value === undefined ? [] : String(value).split(",").map((item) => item.trim()).filter(Boolean),
+    z.array(z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)).default([]),
+  ),
   SESSION_COOKIE_MAX_AGE_SECONDS: z.coerce
     .number()
     .int()

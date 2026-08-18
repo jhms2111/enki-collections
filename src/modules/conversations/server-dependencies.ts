@@ -13,6 +13,9 @@ import { ClosedAiUsageBudgetGate, ConversationTurnOrchestrator, ReservedAiUsageB
 import { ConversationTurnService } from "@/modules/webchat/conversation-turn-service";
 import { FetchOpenAIResponsesTransport, LazyNaturalLanguageIntentClient, OpenAIResponsesIntentClient, UnavailableNaturalLanguageIntentClient } from "@/modules/webchat/openai-responses-intent-client";
 import { PrismaAiOperationalStore } from "@/modules/webchat/prisma-ai-operational-store";
+import { PaymentPageService } from "@/modules/payments/payment-page-service";
+import { PrismaPaymentContextStore } from "@/modules/payments/prisma-payment-context-store";
+import { ExistingDemoPaymentProvider } from "@/modules/payments/payment-provider";
 
 export function getConversationService(): ConversationService {
   const env = getRuntimeEnv();
@@ -23,6 +26,8 @@ export function getConversationService(): ConversationService {
     env.CONVERSATION_SESSION_SECRET,
     env.IDENTITY_MAX_ATTEMPTS,
     env.SESSION_COOKIE_MAX_AGE_SECONDS,
+    undefined,
+    env.DEMO_IDENTIFIER_ONLY_ORGANIZATIONS,
   );
 }
 
@@ -48,6 +53,18 @@ export function getOfferAcceptanceService(): OfferAcceptanceService {
     new SandboxDebtProvider(client),
     env.CONVERSATION_SESSION_SECRET,
     env.IDEMPOTENCY_HMAC_SECRET,
+    env.SESSION_COOKIE_MAX_AGE_SECONDS,
+  );
+}
+
+export function getPaymentPageService(): PaymentPageService {
+  const env = getRuntimeEnv();
+  const client = getPrisma();
+  return new PaymentPageService(
+    new PrismaPaymentContextStore(client),
+    new SandboxDebtProvider(client),
+    new ExistingDemoPaymentProvider(getOfferAcceptanceService()),
+    env.CONVERSATION_SESSION_SECRET,
     env.SESSION_COOKIE_MAX_AGE_SECONDS,
   );
 }

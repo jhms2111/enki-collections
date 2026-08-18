@@ -49,6 +49,16 @@ export class SandboxDebtProvider implements DebtProvider {
     return { verified: true, debtorContext: { verificationRef: this.verificationRef(organization.organizationId, profile.profileRef), authorizedAccounts } };
   }
 
+  async verifyDemoIdentifierOnly(organization: OrganizationContext, identificationRef: string): Promise<VerifiedDebtorContext> {
+    const profile = await this.profileForIdentification(organization, identificationRef);
+    const exclusivelyDemo = profile.isDemo && profile.challenge?.isDemo && profile.challenge.options.every((option) => option.isDemo) && profile.debtors.every((debtor) => debtor.isDemo && debtor.creditor.isDemo && debtor.debts.every((debt) => debt.isDemo && debt.offers.every((offer) => offer.isDemo)));
+    if (!exclusivelyDemo) throw new ApplicationError("DEMO_IDENTITY_MODE_FORBIDDEN", "O modo simplificado é exclusivo de cenários integralmente demonstrativos.", 403);
+    return {
+      verificationRef: this.verificationRef(organization.organizationId, profile.profileRef),
+      authorizedAccounts: profile.debtors.filter((debtor) => debtor.status === "ACTIVE" && debtor.creditor.status === "ACTIVE").map((debtor) => ({ debtorRef: debtor.debtorRef, creditorRef: debtor.creditor.creditorRef })),
+    };
+  }
+
   async listDebts(organization: OrganizationContext, debtor: VerifiedDebtorContext): Promise<readonly DebtSummary[]> {
     const profile = await this.assertVerified(organization, debtor);
     return profile.debtors.flatMap((account) => account.debts.filter((debt) => debt.recordStatus === "ACTIVE" && debt.isDemo).map((debt) => this.debtSummary(account.creditor.creditorRef, account.creditor.displayName, account.debtorRef, debt)));

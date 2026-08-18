@@ -58,11 +58,58 @@ function setup(clientResult: IntentClientResult | Error, options?: { enabled?: b
 }
 
 describe("ConversationTurnOrchestrator", () => {
+  it("keeps deterministic continuity across canonical debt and payment questions", async () => {
+    const { orchestrator, interpret } = setup(result(), { enabled: false });
+    const facts = [
+      { key: "debt_creditor", displayText: "Credor: Empresa fictícia." },
+      { key: "debt_description", displayText: "Descrição da dívida: Conta demonstrativa." },
+      { key: "debt_amount", displayText: "Valor informado: R$ 450,00." },
+      { key: "debt_due_date", displayText: "Vencimento informado: 15 de agosto de 2099." },
+      { key: "debt_status", displayText: "Situação informada: em aberto." },
+    ];
+    const selected = { ...baseTurn, uiContext: "DEBT_DETAIL" as const, canonicalFacts: facts, allowedActions: ["LIST_OFFERS" as const], hasCurrentAcceptance: false };
+    const payment = await orchestrator.handle({ ...selected, message: "como seria esse pagamento?" });
+    expect(payment.intent).toBe("REQUEST_INSTRUMENT");
+    expect(payment.message).toContain("confirme o aceite");
+    const continuation = await orchestrator.handle({ ...selected, message: "sim, me explique", lastSubject: payment.intent });
+    expect(continuation.intent).toBe("REQUEST_INSTRUMENT");
+    const factsAnswer = await orchestrator.handle({ ...selected, message: "valor e vencimento", lastSubject: continuation.intent });
+    expect(factsAnswer.message).toContain("R$ 450,00");
+    expect(factsAnswer.message).toContain("15 de agosto de 2099");
+    const beforeAcceptance = await orchestrator.handle({ ...selected, message: "onde faço o pagamento?" });
+    expect(beforeAcceptance.message).not.toContain("/demo/");
+    const afterAcceptance = await orchestrator.handle({ ...selected, conversationState: "OFFER_ACCEPTED", uiContext: "ACCEPTED", hasCurrentAcceptance: true, message: "onde faço o pagamento?" });
+    expect(afterAcceptance.intent).toBe("REQUEST_INSTRUMENT");
+    expect(afterAcceptance.message).toContain("página de pagamento");
+    expect(interpret).not.toHaveBeenCalled();
+  });
   it("falls back for free when OpenAI is disabled without calling the client", async () => {
     const { orchestrator, interpret } = setup(result(), { enabled: false });
     const turn = await orchestrator.handle({ ...baseTurn, message: "ver propostas" });
     expect(turn.fallbackUsed).toBe(true);
     expect(turn.intent).toBe("LIST_OFFERS");
+    expect(interpret).not.toHaveBeenCalled();
+  });
+
+  it("prepares mutation confirmation deterministically without calling OpenAI", async () => {
+    const { orchestrator, interpret } = setup(result(), { enabled: false });
+    const turn = await orchestrator.handle({ ...baseTurn, message: "quero aceitar" });
+    expect(turn.intent).toBe("ACCEPT_OFFER");
+    expect(turn.requiresConfirmation).toBe(true);
+    expect(turn.message).toContain("Confirme no botão");
+    expect(interpret).not.toHaveBeenCalled();
+  });
+
+  it("does not prepare an intent unavailable in the current state", async () => {
+    const { orchestrator, interpret } = setup(result(), { enabled: false });
+    const turn = await orchestrator.handle({
+      ...baseTurn,
+      message: "já paguei",
+      identityStatus: "NOT_STARTED",
+      uiContext: "IDENTITY",
+    });
+    expect(turn.intent).toBe("UNKNOWN");
+    expect(turn.requiresConfirmation).toBe(false);
     expect(interpret).not.toHaveBeenCalled();
   });
 

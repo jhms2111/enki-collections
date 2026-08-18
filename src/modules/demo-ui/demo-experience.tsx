@@ -84,7 +84,7 @@ export function DemoExperience({ slug, version }: { slug: string; version: strin
     event.preventDefault(); if (!conversation) return;
     await run(async () => {
       const result = await identify(conversation.id, identifier);
-      setConversation(result.conversation); setChallenge(result.challenge); setSelectedOption("");
+      setConversation(result.conversation); setChallenge(result.verificationRequired ? result.challenge : null); setSelectedOption("");
     });
   }
 

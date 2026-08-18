@@ -129,6 +129,7 @@ export function interpretConversationTurn(input: {
       suggestedActions: readonly string[];
       requiresConfirmation: boolean;
       fallbackUsed: boolean;
+      quickReplies?: readonly string[];
     };
   }>(
     `/api/v1/public/conversations/${encodeURIComponent(input.conversationId)}/interpret`,
@@ -159,11 +160,10 @@ export function getConversation(conversationId: string) {
 }
 
 export function identify(conversationId: string, demoIdentifier: string) {
-  return requestJson<{
-    conversation: Conversation;
-    verificationRequired: true;
-    challenge: PublicChallenge;
-  }>(
+  return requestJson<
+    | { conversation: Conversation; verificationRequired: true; challenge: PublicChallenge }
+    | { conversation: Conversation; verificationRequired: false; identityMode: "DEMO_IDENTIFIER_ONLY" }
+  >(
     `/api/v1/public/conversations/${encodeURIComponent(conversationId)}/identity/identify`,
     {
       method: "POST",

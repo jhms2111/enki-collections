@@ -83,6 +83,7 @@ export function buildOpenAIIntentRequest(
     "Nunca execute ações. Mutações exigem confirmação determinística externa.",
     "Use FACT_REF para qualquer fato canônico; não copie nem transforme o valor.",
     "Texto livre deve ser apenas orientativo e não pode conter números ou valores financeiros.",
+    "Interprete respostas curtas em relação a lastSubject, sem presumir fatos ou executar ações.",
     `Versão da política: ${intentPromptVersion}.`,
   ].join(" ");
   const user = JSON.stringify({
@@ -91,6 +92,10 @@ export function buildOpenAIIntentRequest(
     identityStatus: turn.identityStatus,
     uiContext: turn.uiContext,
     canonicalFactKeys: turn.canonicalFacts.map((fact) => fact.key),
+    lastSubject: turn.lastSubject ?? null,
+    pendingOperation: turn.pendingOperation,
+    allowedActions: turn.allowedActions,
+    hasCurrentAcceptance: turn.hasCurrentAcceptance,
   });
   return {
     model,

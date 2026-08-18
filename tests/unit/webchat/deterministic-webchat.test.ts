@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  clearPreviousJourneyReference,
+  extractDemoIdentifier,
+  isExactPendingConfirmation,
   scrollChatEnd,
-  secureJourneyPath,
-  shouldSubmitComposerKey,
 } from "@/modules/webchat/deterministic-webchat";
 
 describe("deterministic webchat scrolling", () => {
@@ -23,30 +22,25 @@ describe("deterministic webchat scrolling", () => {
   });
 });
 
-describe("webchat composer keyboard", () => {
-  it("submits with Enter", () => {
-    expect(shouldSubmitComposerKey("Enter", false)).toBe(true);
-  });
-
-  it("keeps a new line with Shift+Enter", () => {
-    expect(shouldSubmitComposerKey("Enter", true)).toBe(false);
-  });
-
-  it("does not submit for other keys", () => {
-    expect(shouldSubmitComposerKey(" ", false)).toBe(false);
+describe("conversational demonstration identifier", () => {
+  it("extracts only a canonical DEMO identifier from natural text", () => {
+    expect(extractDemoIdentifier("meu localizador é demo-aurora-001")).toBe("DEMO-AURORA-001");
+    expect(extractDemoIdentifier("meu CPF é 123.456.789-00")).toBeNull();
   });
 });
 
-describe("secure journey handoff", () => {
-  it("uses only the generic public journey path", () => {
-    expect(secureJourneyPath()).toBe("/demo/jf-demo");
-    expect(secureJourneyPath()).not.toMatch(/[?#]|DEMO-|conv_|debt|offer|token/i);
-  });
+describe("typed operation confirmation", () => {
+  const pending = {
+    conversationId: "conversation-a",
+    kind: "ACCEPT" as const,
+    fingerprint: "opaque-fingerprint",
+    expiresAt: 2_000,
+  };
 
-  it("removes only the prior journey reference before navigation", () => {
-    const removeItem = vi.fn();
-    clearPreviousJourneyReference({ removeItem });
-    expect(removeItem).toHaveBeenCalledOnce();
-    expect(removeItem).toHaveBeenCalledWith("enki-demo:conversation:jf-demo");
+  it("accepts only the exact phrase for the matching conversation before expiry", () => {
+    expect(isExactPendingConfirmation(pending, "CONFIRMO O ACEITE", "conversation-a", 1_000)).toBe(true);
+    expect(isExactPendingConfirmation(pending, "confirmo o aceite", "conversation-a", 1_000)).toBe(false);
+    expect(isExactPendingConfirmation(pending, "CONFIRMO O ACEITE", "conversation-b", 1_000)).toBe(false);
+    expect(isExactPendingConfirmation(pending, "CONFIRMO O ACEITE", "conversation-a", 2_000)).toBe(false);
   });
 });

@@ -1,5 +1,21 @@
 import type { NextConfig } from "next";
 
+export function buildContentSecurityPolicy(environment: Readonly<{
+  nodeEnv?: string;
+  vercel?: string;
+  vercelEnv?: string;
+}> = {
+  nodeEnv: process.env.NODE_ENV,
+  vercel: process.env.VERCEL,
+  vercelEnv: process.env.VERCEL_ENV,
+}): string {
+  const allowsDevelopmentEval = environment.nodeEnv === "development"
+    && !environment.vercel
+    && !environment.vercelEnv;
+  const scriptSource = `script-src 'self' 'unsafe-inline'${allowsDevelopmentEval ? " 'unsafe-eval'" : ""}`;
+  return `default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; ${scriptSource}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'`;
+}
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
@@ -26,8 +42,7 @@ const nextConfig: NextConfig = {
       },
       {
         key: "Content-Security-Policy",
-        value:
-          "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+        value: buildContentSecurityPolicy(),
       },
       { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive, nosnippet" },
     ];

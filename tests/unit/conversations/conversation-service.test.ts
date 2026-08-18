@@ -66,6 +66,7 @@ class MemoryConversationStore implements ConversationStore {
       organizationId: input.organization.id,
       organizationExternalRef: input.organization.externalRef,
       organizationTimeZone: "America/Sao_Paulo",
+      organizationSlug: input.organization.slug,
       publicReference: input.publicReference,
       sessionTokenHash: input.sessionTokenHash,
       state: "STARTED" as const,
@@ -235,6 +236,16 @@ async function createAndIdentify() {
 }
 
 describe("ConversationService", () => {
+  it("uses DEMO_IDENTIFIER_ONLY only for an explicitly configured sandbox organization", async () => {
+    const store = new MemoryConversationStore();
+    const provider = new MockDebtProvider(undefined, () => fixedNow) as MockDebtProvider & { verifyDemoIdentifierOnly: () => Promise<{ verificationRef: string; authorizedAccounts: readonly { debtorRef: string; creditorRef: string }[] }> };
+    provider.verifyDemoIdentifierOnly = async () => ({ verificationRef: "verification-demo-only", authorizedAccounts: [{ debtorRef: "debtor-aurora", creditorRef: "creditor-aurora" }] });
+    const service = new ConversationService(store, provider, sessionSecret, 3, 3_600, () => fixedNow, ["jf-demo"]);
+    const created = await service.create("jf-demo");
+    const result = await service.identify(created.conversation.id, created.token, "DEMO-AURORA-001", "request-demo-only");
+    expect(result).toMatchObject({ verificationRequired: false, identityMode: "DEMO_IDENTIFIER_ONLY", conversation: { identityStatus: "VERIFIED" } });
+    expect(JSON.stringify(result)).not.toContain("optionRef");
+  });
   it("creates a conversation with a strong token stored only as a hash", async () => {
     const { store, service } = setup();
     const result = await service.create("jf-demo");
@@ -312,9 +323,9 @@ describe("ConversationService", () => {
     expect(
       publicIdentityChallengeSchema.parse(identified.challenge),
     ).toEqual(identified.challenge);
-    expect(identified.challenge.prompt).toBeTruthy();
-    expect(identified.challenge.options).toHaveLength(3);
-    expect(identified.challenge.attemptsRemaining).toBe(3);
+    expect(identified.challenge!.prompt).toBeTruthy();
+    expect(identified.challenge!.options).toHaveLength(3);
+    expect(identified.challenge!.attemptsRemaining).toBe(3);
     expect(serialized).not.toContain("challengeRef");
     expect(serialized).not.toContain("correctOptionRef");
     expect(serialized).not.toContain("debt-");
